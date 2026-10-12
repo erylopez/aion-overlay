@@ -1,4 +1,4 @@
-# Aion2 Pet Tracker
+<img width="1159" height="718" alt="image" src="https://github.com/user-attachments/assets/5fbc2554-d81d-4ba9-a8a1-0eae2ae83702" /># Aion2 Pet Tracker
 
 A Windows overlay that counts your Aion 2 **Pet Collection** souls as they drop, so you don't have
 to keep opening the Pets menu.
@@ -13,6 +13,8 @@ to keep opening the Pets menu.
   the HUD, and see where each soul drops on a map.
 - **Stays out of the way:** it sits in the tray and sleeps while Aion 2 is closed, waking when the
   game starts.
+
+![Image](https://media.discordapp.net/attachments/1558683910362103851/1558683910811033650/image.png?ex=6acda683&is=6acc5503&hm=5e29ca11fe969facff70d1590efbec7276601a46d872a4f23e957a1f877ade70&=&format=webp&quality=lossless "Image")
 
 ## How it works
 
