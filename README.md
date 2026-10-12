@@ -14,7 +14,7 @@ to keep opening the Pets menu.
 - **Stays out of the way:** it sits in the tray and sleeps while Aion 2 is closed, waking when the
   game starts.
 
-![Image](https://media.discordapp.net/attachments/1558683910362103851/1558683910811033650/image.png?ex=6acda683&is=6acc5503&hm=5e29ca11fe969facff70d1590efbec7276601a46d872a4f23e957a1f877ade70&=&format=webp&quality=lossless "Image")
+![The collection panel and the in-game HUD](assets/screenshot.webp)
 
 ## How it works
 
