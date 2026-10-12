@@ -1,4 +1,4 @@
-<img width="1159" height="718" alt="image" src="https://github.com/user-attachments/assets/5fbc2554-d81d-4ba9-a8a1-0eae2ae83702" /># Aion2 Pet Tracker
+# Aion2 Pet Tracker
 
 A Windows overlay that counts your Aion 2 **Pet Collection** souls as they drop, so you don't have
 to keep opening the Pets menu.
