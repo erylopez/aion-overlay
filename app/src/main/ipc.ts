@@ -5,12 +5,16 @@ import { logPath, tracker } from './tracker.ts'
 import { updates } from './update.ts'
 import {
   bubbleDragEnded,
+  closeMerchant,
   hidePanel,
   hudDragEnded,
+  markQuitting,
+  merchantDragEnded,
   moveBubble,
   moveHud,
-  markQuitting,
+  moveMerchant,
   resizeHud,
+  resizeMerchant,
   setHudEditing,
   setPanelExpanded,
   togglePanel,
@@ -47,7 +51,7 @@ export function registerIpc(): void {
     settings.set(key as SettingKey, value)
   })
 
-  handle('tracker:get', () => ({ status: tracker.status(), pets: tracker.pets(), nearby: tracker.nearby() }))
+  handle('tracker:get', () => ({ status: tracker.status(), pets: tracker.pets(), nearby: tracker.nearby(), shop: tracker.shop() }))
   handle('tracker:setSouls', (pet, souls) => {
     if (Number.isInteger(pet) && Number.isInteger(souls) && souls >= 0 && souls < 100000) tracker.setSouls(pet, souls)
   })
@@ -77,4 +81,13 @@ export function registerIpc(): void {
   handle('hud:resize', (size) => {
     if (isPoint({ x: size?.width, y: size?.height })) resizeHud(size)
   })
+
+  handle('merchant:moveTo', (to) => {
+    if (isPoint(to)) moveMerchant(to)
+  })
+  handle('merchant:dragEnd', () => merchantDragEnded())
+  handle('merchant:resize', (size) => {
+    if (isPoint({ x: size?.width, y: size?.height })) resizeMerchant(size)
+  })
+  handle('merchant:close', () => closeMerchant())
 }

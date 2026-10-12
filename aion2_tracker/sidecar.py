@@ -11,12 +11,15 @@ stdout, one JSON object per line (nothing else is ever written there):
     {"type": "sync", "pets": 119, "souls": 938, "corrected": [...], "collection": [...]}
     {"type": "soul", "amount": 1, "pet": {...}, "levelUp": false}
     {"type": "crystal", "amount": 1, "genus": "fera" | "cogni" | null, "pet": {...} | null,
-     "npc": 2100006 | null, "raw": "01 01 ..."}
+     "npc": 2100006 | null, "raw": "01 01 ...", "levelCorrected": false,
+     "kills": [{"npc", "name", "pet", "ago"}]}     kills considered, when credited to no pet
                                                         genus crystals (the pet is maxed), credited
                                                         to the pet the last kill drops; null if
                                                         that kill's monster is not known
     {"type": "pet", "pet": {...}}                       after an edit
     {"type": "combat"}                                  you killed something (at most every 5 s)
+    {"type": "shop", "tab": 104, "nextAt": ms | null, "items": [{"slot", "item", "quantity",
+     "currency", "base", "price"}]}                     a Black Cloud Merchant tab was opened
     {"type": "snapshot", "pets": [...]}                 answer to {"cmd": "snapshot"}, then a nearby
     {"type": "nearby", "world": 1010, "position": [x, y] | null, "monsters": [{"npc", "count"}]}
                                                         what is loaded around you, when it changes

@@ -1,20 +1,20 @@
 <script setup lang="ts">
 // Every pet: search, sort, filter. Click a name or a soul count to correct it; the pin puts a pet
 // on the HUD (in pinned mode).
-import { computed, nextTick, ref, toRefs } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, toRefs } from 'vue'
 import GenusPill, { GENUS_PILL } from '@/components/GenusPill.vue'
 import LevelBadge from '@/components/LevelBadge.vue'
 import LevelBar from '@/components/LevelBar.vue'
 import PetIcon from '@/components/PetIcon.vue'
 import { bridge } from '@/lib/bridge.ts'
-import { nearbyPets, useSpawns, type NearbyPet } from '@/lib/spawns.ts'
+import { CONTINENTS, formatDistance, nearbyPets, petContinents, petDistance, useSpawns, type NearbyPet } from '@/lib/spawns.ts'
 import { displayName, GENERA, GENUS_LABEL, monsterName, PET_DB_DATE, PET_DB_SIZE, PET_DB_SOURCE, petInfo, type Genus } from '@/lib/petDb.ts'
 import { useApp } from '@/stores/app.ts'
 import { blankPet, MAX_LEVEL, nextLevelSouls, type Pet } from '@shared/tracker.ts'
 
 const store = useApp()
 // In the store, so they survive the tab being rebuilt (after a pet's map closes).
-const { query, sort, filter, genus } = toRefs(store.collectionView)
+const { query, sort, filter, genus, continent } = toRefs(store.collectionView)
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -23,18 +23,53 @@ const FILTERS = [
   { id: 'pinned', label: 'Pinned' },
 ] as const
 
-/** Pets per genus, for the genus chips. */
+// Around you: the pets whose soul monsters the tracker sees loaded near you.
+const spawns = useSpawns()
+
+/** The continents each pet's soul monsters spawn on (Elyos, Asmodian, Abyss). */
+const continents = computed(() => (spawns.value ? petContinents(spawns.value) : new Map<number, Set<string>>()))
+const onContinent = (id: number): boolean => !continent.value || !!continents.value.get(id)?.has(continent.value)
+const ofGenus = (id: number): boolean => !genus.value || petInfo(id)?.genus === genus.value
+
+/** Pets per genus on the chosen continent, for the genus chips. */
 const genusCounts = computed(() => {
   const counts = new Map<Genus, number>()
   for (const p of store.pets) {
     const g = petInfo(p.id)?.genus
-    if (g) counts.set(g, (counts.get(g) ?? 0) + 1)
+    if (g && onContinent(p.id)) counts.set(g, (counts.get(g) ?? 0) + 1)
+  }
+  return counts
+})
+/** Pets per continent of the chosen genus, for the continent chips. */
+const continentCounts = computed(() => {
+  const counts = new Map<string, number>()
+  for (const p of store.pets) {
+    if (!ofGenus(p.id)) continue
+    for (const c of continents.value.get(p.id) ?? []) counts.set(c, (counts.get(c) ?? 0) + 1)
   }
   return counts
 })
 
-// Around you: the pets whose soul monsters the tracker sees loaded near you.
-const spawns = useSpawns()
+/**
+ * Range: how far your last known position is from each pet's nearest soul monster spawn in your
+ * zone. The tracker learns the position on entering a zone, teleporting, and from your own skills;
+ * null for a pet with no spawns in your zone, or while the position is not known.
+ */
+const here = computed(() =>
+  store.nearby.world !== null && store.nearby.position ? { world: store.nearby.world, at: store.nearby.position } : null,
+)
+// How old the position is, said the way people do; ticks so it ages while the panel is open.
+const now = ref(Date.now())
+const ticker = setInterval(() => (now.value = Date.now()), 15_000)
+onBeforeUnmount(() => clearInterval(ticker))
+const positionAge = computed(() => {
+  const at = store.nearby.positionAt
+  if (!at) return 'as last seen'
+  const min = Math.floor((now.value - at) / 60_000)
+  return min < 1 ? 'updated just now' : min < 60 ? `updated ${min} min ago` : `updated ${Math.floor(min / 60)} h ago`
+})
+const distance = (id: number): number | null =>
+  spawns.value && here.value ? petDistance(spawns.value, id, here.value.world, here.value.at) : null
 const near = computed(
   () =>
     new Map<number, NearbyPet>(
@@ -66,7 +101,7 @@ const list = computed(() => {
     if (filter.value === 'unfinished' && p.level >= MAX_LEVEL) return false
     if (filter.value === 'session' && !p.session) return false
     const info = petInfo(p.id)
-    if (genus.value && info?.genus !== genus.value) return false
+    if (!ofGenus(p.id) || !onContinent(p.id)) return false
     if (!q) return true
     const haystack = [displayName(p), p.name ?? '', info ? GENUS_LABEL[info.genus] : '', String(p.id)]
     return haystack.some((h) => h.toLowerCase().includes(q))
@@ -76,6 +111,13 @@ const list = computed(() => {
     name: (a, b) => displayName(a).localeCompare(displayName(b)),
     level: (a, b) => b.level - a.level || b.souls - a.souls,
     recent: (a, b) => b.session - a.session || b.souls - a.souls,
+    // Nearest first; pets with no spawn in your zone after them, by souls.
+    range: (a, b) => {
+      const da = distance(a.id)
+      const db = distance(b.id)
+      if (da !== null && db !== null) return da - db
+      return (da === null ? 1 : 0) - (db === null ? 1 : 0) || b.souls - a.souls
+    },
   }
   const nearFirst = (a: Pet, b: Pet): number =>
     filter.value === 'nearby' ? (near.value.get(b.id)?.count ?? 0) - (near.value.get(a.id)?.count ?? 0) : 0
@@ -173,36 +215,71 @@ const syncedAgo = computed(() => {
         <option value="level">Level</option>
         <option value="name">Name</option>
         <option value="recent">This session</option>
+        <option value="range">Range</option>
       </select>
     </div>
-    <div class="flex flex-wrap gap-1.5">
-      <button
-        v-for="f in FILTERS"
-        :key="f.id"
-        type="button"
-        :class="[
-          'rounded-full border px-2.5 py-0.5 text-xs transition',
-          filter === f.id ? 'border-accent bg-accent-soft text-accent' : 'border-light text-darker hover:text-default',
-        ]"
-        @click="filter = f.id"
-      >
-        {{ f.label }}
-      </button>
+    <!-- The filters, one segment per group: what to show, then genus, then continent. -->
+    <div class="divide-y divide-[color:var(--gray-4)] rounded-lg border border-card bg-card">
+      <div class="flex items-start gap-2 px-2.5 py-2">
+        <span class="w-16 shrink-0 pt-1 text-[10px] font-semibold uppercase tracking-wide text-darkest">Show</span>
+        <div class="flex flex-wrap gap-1.5">
+          <button
+            v-for="f in FILTERS"
+            :key="f.id"
+            type="button"
+            :class="[
+              'rounded-full border px-2.5 py-0.5 text-xs transition',
+              filter === f.id ? 'border-accent bg-accent-soft text-accent' : 'border-light text-darker hover:text-default',
+            ]"
+            @click="filter = f.id"
+          >
+            {{ f.label }}
+          </button>
+        </div>
+      </div>
+      <div class="flex items-start gap-2 px-2.5 py-2">
+        <span class="w-16 shrink-0 pt-1 text-[10px] font-semibold uppercase tracking-wide text-darkest">Genus</span>
+        <div class="flex flex-wrap gap-1.5">
+          <button
+            v-for="g in GENERA"
+            :key="g.id"
+            type="button"
+            :class="[
+              'rounded-full border px-2.5 py-0.5 text-xs transition',
+              genus === g.id ? GENUS_PILL[g.id] : 'border-light text-darker hover:text-default',
+            ]"
+            @click="genus = genus === g.id ? null : g.id"
+          >
+            {{ g.label }} <span class="tabular-nums opacity-60">{{ genusCounts.get(g.id) ?? 0 }}</span>
+          </button>
+        </div>
+      </div>
+      <div class="flex items-start gap-2 px-2.5 py-2">
+        <span class="w-16 shrink-0 pt-1 text-[10px] font-semibold uppercase tracking-wide text-darkest">Continent</span>
+        <div class="flex flex-wrap gap-1.5">
+          <button
+            v-for="c in CONTINENTS"
+            :key="c.id"
+            type="button"
+            :class="[
+              'rounded-full border px-2.5 py-0.5 text-xs transition',
+              continent === c.id ? 'border-accent bg-accent-soft text-accent' : 'border-light text-darker hover:text-default',
+            ]"
+            :title="`Pets whose soul monsters spawn in ${c.label === 'Abyss' ? 'the Abyss' : `${c.label} zones`}`"
+            @click="continent = continent === c.id ? null : c.id"
+          >
+            {{ c.label }} <span class="tabular-nums opacity-60">{{ continentCounts.get(c.id) ?? 0 }}</span>
+          </button>
+        </div>
+      </div>
     </div>
-    <div class="-mt-1 flex flex-wrap gap-1.5">
-      <button
-        v-for="g in GENERA"
-        :key="g.id"
-        type="button"
-        :class="[
-          'rounded-full border px-2.5 py-0.5 text-xs transition',
-          genus === g.id ? GENUS_PILL[g.id] : 'border-light text-darker hover:text-default',
-        ]"
-        @click="genus = genus === g.id ? null : g.id"
-      >
-        {{ g.label }} <span class="tabular-nums opacity-60">{{ genusCounts.get(g.id) ?? 0 }}</span>
-      </button>
-    </div>
+    <p v-if="sort === 'range' && !here" class="-mt-1 text-[11px] text-darkest">
+      Range needs your position: the tracker learns it when you enter a zone, teleport or fight.
+    </p>
+    <p v-else-if="sort === 'range' && here" class="-mt-1 text-[11px] text-darkest">
+      Range from your position in {{ spawns?.worlds[here.world]?.name ?? 'this zone' }}, {{ positionAge }}. It updates
+      when you enter a zone, teleport or fight.
+    </p>
 
     <ul class="divide-y divide-[color:var(--gray-4)] overflow-hidden rounded-lg border border-card bg-card">
       <li
@@ -283,7 +360,11 @@ const syncedAgo = computed(() => {
         <div v-if="near.get(pet.id)" class="truncate text-[11px] text-green" :title="nearLine(near.get(pet.id)!)">
           nearby: {{ nearLine(near.get(pet.id)!) }}
         </div>
-        <div v-else-if="monsterName(pet)" class="truncate text-[11px] text-darkest">from {{ monsterName(pet) }}</div>
+        <div v-else-if="monsterName(pet) || (sort === 'range' && distance(pet.id) !== null)" class="truncate text-[11px] text-darkest">
+          <template v-if="sort === 'range' && distance(pet.id) !== null">{{ formatDistance(distance(pet.id)!) }} away</template>
+          <template v-if="sort === 'range' && distance(pet.id) !== null && monsterName(pet)"> · </template>
+          <template v-if="monsterName(pet)">from {{ monsterName(pet) }}</template>
+        </div>
         <div class="mt-1 flex items-center gap-2">
           <LevelBar :pet="pet" class="flex-1" />
           <span class="w-20 text-right text-[11px] tabular-nums text-darkest">

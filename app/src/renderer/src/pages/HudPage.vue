@@ -12,7 +12,7 @@ import { displayName, GENUS_LABEL, petInfo } from '@/lib/petDb.ts'
 import { nearbyPets, useSpawns, type NearbyPet } from '@/lib/spawns.ts'
 import { windowDrag } from '@/lib/windowDrag.ts'
 import { useApp } from '@/stores/app.ts'
-import { blankPet, type Pet } from '@shared/tracker.ts'
+import { blankPet, nextLevelSouls, type Pet } from '@shared/tracker.ts'
 
 const store = useApp()
 const root = ref<HTMLElement | null>(null)
@@ -39,13 +39,22 @@ const nearRows = computed<Pet[]>(() => {
     .map((id) => known.get(id) ?? blankPet(id))
 })
 
-/** Middle section: this session's pets, or the pinned ones. */
-const rows = computed<Pet[]>(() =>
-  hud.value.mode === 'pinned'
-    ? hud.value.pinned.map((id) => store.pets.find((p) => p.id === id)).filter((p): p is Pet => !!p)
-    : store.recentPets.slice(0, hud.value.recentCount),
-)
+/**
+ * Middle section: this fight's pets, or the pinned ones. A pet the Nearby section shows already is
+ * left out (it was listed twice), and the next one takes its row.
+ */
+const rows = computed<Pet[]>(() => {
+  const shown = new Set(nearRows.value.map((p) => p.id))
+  return hud.value.mode === 'pinned'
+    ? hud.value.pinned.map((id) => store.pets.find((p) => p.id === id)).filter((p): p is Pet => !!p && !shown.has(p.id))
+    : store.recentPets.filter((p) => !shown.has(p.id)).slice(0, hud.value.recentCount)
+})
 const toasts = computed(() => (hud.value.toasts ? store.toasts : []))
+/** The count towards the next level, against what it needs: 0/5 at Lv0, 5/25 at Lv1, 9/75 at Lv2. */
+const progressText = (pet: Pet): string => {
+  const need = nextLevelSouls(pet)
+  return need === null ? 'max' : `${pet.souls}/${need}`
+}
 /** "Fera crystal": a maxed pet's drop is its genus's crystal. */
 const crystalLabel = (pet: number): string => {
   const genus = petInfo(pet)?.genus
@@ -129,7 +138,7 @@ onBeforeUnmount(() => {
                   <span class="truncate font-medium text-dark">{{ monsterLabel(pet.id) }}</span>
                   <span class="flex shrink-0 items-center gap-1.5 tabular-nums">
                     <span v-if="pet.session" class="text-xs text-green">+{{ pet.session }}</span>
-                    <span class="font-semibold">{{ pet.level >= 3 ? 'max' : pet.souls }}</span>
+                    <span class="font-semibold">{{ progressText(pet) }}</span>
                     <LevelBadge :pet="pet" />
                   </span>
                 </div>
@@ -155,7 +164,7 @@ onBeforeUnmount(() => {
                   </span>
                   <span class="flex shrink-0 items-center gap-1.5 tabular-nums">
                     <span v-if="pet.session" class="text-xs text-green">+{{ pet.session }}</span>
-                    <span class="font-semibold">{{ pet.level >= 3 ? 'max' : pet.souls }}</span>
+                    <span class="font-semibold">{{ progressText(pet) }}</span>
                     <LevelBadge :pet="pet" />
                   </span>
                 </div>
@@ -184,7 +193,7 @@ onBeforeUnmount(() => {
             <PetIcon :id="t.pet.id" :size="18" />
             <span class="truncate">{{ displayName(t.pet) }}<span v-if="t.crystal" class="text-yellow"> · {{ crystalLabel(t.pet.id) }}</span></span>
             <span v-if="t.levelUp" class="shrink-0 rounded bg-green/20 px-1 text-[10px] font-bold text-green">Lv{{ t.pet.level }}!</span>
-            <span class="ml-auto tabular-nums text-darker">{{ t.crystal ? t.pet.crystals : t.pet.souls }}</span>
+            <span class="ml-auto tabular-nums text-darker">{{ t.crystal ? t.pet.crystals : progressText(t.pet) }}</span>
           </div>
         </TransitionGroup>
       </div>

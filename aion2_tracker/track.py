@@ -23,7 +23,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import capture, protocol as P
-from .analyze import NPCS_DEFAULT, load_droppers, loot_owner_records
+from .analyze import NPCS_DEFAULT, load_droppers, load_genera, loot_owner_records
 
 STORE = Path(__file__).resolve().parents[1] / "collection.json"
 # Souls to go from Lv0 to 1, 1 to 2 and 2 to 3. The count the Pets menu shows restarts at 0 on each
@@ -114,10 +114,12 @@ def print_event(ev: dict) -> None:
 class Tracker:
     def __init__(self, data: dict, npcs: dict, persist: bool = True,
                  on_event: Callable[[dict], None] = print_event, store: Path = STORE,
-                 droppers: dict[int, int] | None = None):
+                 droppers: dict[int, int] | None = None, genera: dict[int, str] | None = None):
         self.data, self.npcs, self.persist, self.on_event, self.store = data, npcs, persist, on_event, store
         # Monster code -> the pet it drops: how a crystal, which names no pet, finds one.
         self.droppers = load_droppers() if droppers is None else droppers
+        # Pet -> genus: a crystal's genus must match its pet's.
+        self.genera = load_genera() if genera is None else genera
         self.mob_code: dict[int, int | None] = {}
         self.recent: collections.deque = collections.deque(maxlen=64)  # (ts, mob entity)
         self.session: collections.Counter = collections.Counter()
@@ -180,6 +182,11 @@ class Tracker:
             self._soul(ts, soul)
         elif crystal := P.parse_crystal(pkt):
             self._crystal(ts, crystal)
+        elif shop := P.parse_shop(pkt):
+            # The Black Cloud Merchant's stock, as the tab just opened shows it: passed on as is
+            # (the app knows which items are pets, and which pets are worth buying).
+            self.on_event({"type": "shop", "ts": ts, "tab": shop.tab, "nextAt": shop.next_at_ms,
+                           "items": [vars(i) for i in shop.items]})
         if coll := P.parse_collection(pkt):
             self._sync(ts, coll)
 
@@ -276,28 +283,57 @@ class Tracker:
                        "levelUp": levelled})
 
     def _crystal(self, ts: float, crystal: P.Crystal) -> None:
-        """Genus crystals from a monster whose pet is maxed. The pet is the one a monster killed
-        just before drops, among those whose pet is at Lv3 (as the login sync said): yours if it
-        is known which player you are, else the nearest such kill. A kill of a monster whose pet
-        is still collecting souls is never it: two monsters dying together (2026-10-10, a Foul
-        Skama and a Marsh Targon) had put the Skama's crystal on the Targon."""
+        """Genus crystals from a monster whose pet is maxed. The message names no pet, so it is
+        the pet of a monster killed just before (yours if it is known which player you are), of
+        the crystal's genus. Among those:
+        - a pet already at Lv3 (as the login sync said) is it: the nearest such kill;
+        - else, if they are all one pet's monsters, that pet is at Lv3 already in game, whatever
+          was saved (souls it got and the tracker missed): it is corrected and credited
+          (2026-10-11: Dracuni Herbalist, Lv3 in game, saved as Lv2 with 70);
+        - else no one: two pets that could both be it (2026-10-10, a Foul Skama and a Marsh
+          Targon dying together, had put the Skama's crystal on the Targon and marked it Lv3).
+        """
+        genus = P.CRYSTAL_GENUS.get(crystal.genus)
         credited = [(ts - t, mob, owner) for t, mob, owner in self.credits if 0 <= ts - t <= NAME_WINDOW_S]
-        maxed = [c for c in credited if self._maxed(self.droppers.get(self.mob_code.get(c[1])))]
         me = self.self_id()
-        mine = [c for c in maxed if c[2] == me] or maxed
-        code = self.mob_code.get(min(mine)[1]) if mine else None
-        pid = self.droppers.get(code) if code else None
-        event = {"type": "crystal", "ts": ts, "amount": crystal.amount, "genus": P.CRYSTAL_GENUS.get(crystal.genus),
-                 "npc": code, "raw": crystal.raw.hex(" "), "pet": None}
-        if pid is not None:
+        kills = [c for c in credited if c[2] == me] or credited
+        # (seconds before, monster code, pet) for each kill whose monster drops a pet of this genus.
+        candidates = []
+        for ago, mob, _owner in kills:
+            code = self.mob_code.get(mob)
+            pid = self.droppers.get(code) if code else None
+            if pid is not None and (genus is None or self.genera.get(pid) in (None, genus)):
+                candidates.append((ago, code, pid))
+        maxed = [c for c in candidates if self._maxed(c[2])]
+        pick, corrected = None, False
+        if maxed:
+            pick = min(maxed)
+        elif candidates and len({c[2] for c in candidates}) == 1:
+            pick, corrected = min(candidates), True
+        event = {"type": "crystal", "ts": ts, "amount": crystal.amount, "genus": genus,
+                 "npc": pick[1] if pick else None, "raw": crystal.raw.hex(" "), "pet": None,
+                 "levelCorrected": False,
+                 # What was considered, when it went to no one: to see why in the log.
+                 "kills": [] if pick else [
+                     {"npc": self.mob_code.get(mob), "name": self._npc_name(self.mob_code.get(mob)),
+                      "pet": self.droppers.get(self.mob_code.get(mob)), "ago": round(ago, 2)}
+                     for ago, mob, _owner in kills]}
+        if pick:
+            _ago, code, pid = pick
             pet = self._pet(pid)
+            if corrected:
+                pet["level"], pet["souls"] = MAX_LEVEL, 0
+                pet.pop("levelEstimated", None)
+                event["levelCorrected"] = True
             pet["crystals"] = pet.get("crystals", 0) + crystal.amount
-            if name := self.npcs.get(str(code), {}).get("name"):
+            if name := self._npc_name(code):
                 pet["votes"][name] = pet["votes"].get(name, 0) + 1
             self._save()
             event["pet"] = self.view(pid)
         self.on_event(event)
 
+    def _npc_name(self, code: int | None) -> str | None:
+        return self.npcs.get(str(code), {}).get("name") if code else None
 
 def show(data: dict, everything: bool = True) -> None:
     pets = sorted(data["pets"].items(), key=lambda kv: -kv[1]["souls"])

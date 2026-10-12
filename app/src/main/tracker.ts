@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path'
 import { DISPLAY_NAME } from '../shared/app.ts'
 import { broadcast } from './broadcast.ts'
 import { settings } from './settings.ts'
-import { GAME_ACTIVE_S, NO_NEARBY, type Nearby, type Pet, type SoulToast, type TrackerStatus } from '../shared/tracker.ts'
+import { GAME_ACTIVE_S, NO_NEARBY, type Nearby, type Pet, type ShopItem, type ShopStock, type SoulToast, type TrackerStatus } from '../shared/tracker.ts'
 
 const RESTART_DELAYS_MS = [1000, 3000, 10000, 30000]
 
@@ -32,8 +32,16 @@ let restartTimer: NodeJS.Timeout | null = null
 let stderrTail: string[] = []
 const pets = new Map<number, Pet>()
 let nearby: Nearby = NO_NEARBY
+/** The Black Cloud Merchant's stock: the latest of each tab opened, kept until its restock. */
+const shopTabs = new Map<number, ShopStock>()
+const currentShop = (): ShopStock[] => {
+  const now = Date.now()
+  for (const [tab, s] of shopTabs) if (s.nextAt !== null && s.nextAt <= now) shopTabs.delete(tab)
+  return [...shopTabs.values()]
+}
 const soulListeners = new Set<(toast: SoulToast) => void>()
 const statusListeners = new Set<(status: TrackerStatus) => void>()
+const shopListeners = new Set<(stock: ShopStock[]) => void>()
 
 let status: TrackerStatus = {
   state: 'starting',
@@ -240,10 +248,15 @@ function handleLine(line: string): void {
       break
     }
     case 'crystal': {
-      // Genus crystals: the pet is maxed. Null when the kill's monster was not known (it spawned
-      // before the tracker started); the raw body is logged until all of it is understood.
+      // Genus crystals: the pet is maxed. No pet when none of the kills just before could be it;
+      // the kills it considered are logged then, and the raw body always.
       const pet = ev['pet'] as Pet | null
-      log(`crystal: +${ev['amount']} ${ev['genus'] ?? 'unknown genus'} ${pet ? `pet ${pet.id}${pet.name ? ` (${pet.name})` : ''} -> ${pet.crystals} crystals` : `unattributed (monster ${ev['npc'] ?? 'unknown'})`} [${ev['raw']}]`)
+      const kills = (ev['kills'] as { npc: number | null; name: string | null; pet: number | null; ago: number }[] | undefined) ?? []
+      const considered = kills.length
+        ? kills.map((k) => `${k.name ?? `monster ${k.npc ?? '?'}`}${k.pet ? ` (pet ${k.pet})` : ' (no pet)'} ${k.ago}s before`).join(', ')
+        : 'no kill just before'
+      log(`crystal: +${ev['amount']} ${ev['genus'] ?? 'unknown genus'} ${pet ? `pet ${pet.id}${pet.name ? ` (${pet.name})` : ''} -> ${pet.crystals} crystals` : `credited to no pet; kills: ${considered}`} [${ev['raw']}]`)
+      if (ev['levelCorrected'] === true && pet) log(`level: pet ${pet.id}${pet.name ? ` (${pet.name})` : ''} is at Lv${pet.level} in game (it gets crystals): corrected`)
       if (!pet) break
       updatePet(pet)
       const toast: SoulToast = { pet, amount: ev['amount'] as number, at: Date.now(), levelUp: false, crystal: true }
@@ -254,16 +267,39 @@ function handleLine(line: string): void {
     case 'combat':
       broadcast('tracker:combat', Date.now())
       break
+    case 'shop': {
+      const stock: ShopStock = {
+        tab: ev['tab'] as number,
+        nextAt: (ev['nextAt'] as number | null) ?? null,
+        at: Date.now(),
+        items: ev['items'] as ShopItem[],
+      }
+      shopTabs.set(stock.tab, stock)
+      const restock = stock.nextAt ? new Date(stock.nextAt).toISOString().slice(11, 16) + ' UTC' : 'unknown'
+      log(`merchant: tab ${stock.tab}, ${stock.items.length} items (${stock.items.map((i) => `${i.item}@${i.price}`).join(' ')}); restocks ${restock}`)
+      broadcast('tracker:shop', currentShop())
+      for (const fn of shopListeners) fn(currentShop())
+      break
+    }
     case 'pet':
       updatePet(ev['pet'] as Pet)
       break
     case 'snapshot':
       replacePets(ev['pets'] as Pet[])
       break
-    case 'nearby':
-      nearby = { world: ev['world'] as number | null, position: ev['position'] as Nearby['position'], monsters: ev['monsters'] as Nearby['monsters'] }
+    case 'nearby': {
+      const position = ev['position'] as Nearby['position']
+      // Stamped here, on change only: the helper resends the same position with every Nearby update.
+      const moved = String(position) !== String(nearby.position) || ev['world'] !== nearby.world
+      nearby = {
+        world: ev['world'] as number | null,
+        position,
+        positionAt: position ? (moved ? Date.now() : nearby.positionAt) : null,
+        monsters: ev['monsters'] as Nearby['monsters'],
+      }
       broadcast('tracker:nearby', nearby)
       break
+    }
     case 'error':
       stderrTail = [...stderrTail, `sidecar: ${ev['detail']}`].slice(-20)
       break
@@ -289,11 +325,17 @@ export const tracker = {
   status: (): TrackerStatus => status,
   pets: (): Pet[] => [...pets.values()],
   nearby: (): Nearby => nearby,
+  shop: (): ShopStock[] => currentShop(),
   setSouls: (pet: number, souls: number): void => command({ cmd: 'set', pet, souls }),
   setName: (pet: number, name: string): void => command({ cmd: 'name', pet, name }),
   onSoul(fn: (toast: SoulToast) => void): () => void {
     soulListeners.add(fn)
     return () => soulListeners.delete(fn)
+  },
+  /** A tab of the Black Cloud Merchant was opened: its stock (with the other tabs'). */
+  onShop(fn: (stock: ShopStock[]) => void): () => void {
+    shopListeners.add(fn)
+    return () => shopListeners.delete(fn)
   },
   onStatus(fn: (status: TrackerStatus) => void): () => void {
     statusListeners.add(fn)

@@ -3,12 +3,13 @@
  * this store (separate renderers); main broadcasts every change to all of them.
  */
 import { defineStore } from 'pinia'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, toRaw } from 'vue'
 import { SETTINGS_DEFAULTS, type SettingKey, type Settings } from '@shared/settings.ts'
-import { MAX_LEVEL, NO_NEARBY, type Nearby, type Pet, type SoulToast, type TrackerStatus } from '@shared/tracker.ts'
+import { MAX_LEVEL, NO_NEARBY, type Nearby, type Pet, type ShopStock, type SoulToast, type TrackerStatus } from '@shared/tracker.ts'
 import { initialUpdateStatus, type UpdateStatus } from '@shared/update.ts'
 import { bridge } from '@/lib/bridge.ts'
 import type { Genus } from '@/lib/petDb.ts'
+import type { Continent } from '@/lib/spawns.ts'
 
 const TOAST_MS = 5000
 
@@ -21,6 +22,8 @@ export const useApp = defineStore('app', () => {
   const panelVisible = ref(false)
   const ready = ref(false)
   const nearby = ref<Nearby>(NO_NEARBY)
+  /** The Black Cloud Merchant's stock: the tabs opened, until their restock. */
+  const shop = ref<ShopStock[]>([])
   const update = ref<UpdateStatus>(initialUpdateStatus(''))
   /**
    * The collection's search, sort and filter pills. Kept here, not in the tab: the tab is rebuilt
@@ -28,9 +31,10 @@ export const useApp = defineStore('app', () => {
    */
   const collectionView = reactive({
     query: '',
-    sort: 'souls' as 'souls' | 'name' | 'level' | 'recent',
+    sort: 'souls' as 'souls' | 'name' | 'level' | 'recent' | 'range',
     filter: 'all' as 'all' | 'nearby' | 'pinned' | 'unfinished' | 'session',
     genus: null as Genus | null,
+    continent: null as Continent | null,
   })
   /** The pet whose drop locations the panel is showing, if any. */
   const openPetId = ref<number | null>(null)
@@ -75,7 +79,9 @@ export const useApp = defineStore('app', () => {
     toasts.value = [...toasts.value, t].slice(-4)
     activity(t.at)
     lastSoulAt.value = new Map(lastSoulAt.value).set(t.pet.id, t.at)
-    setTimeout(() => (toasts.value = toasts.value.filter((x) => x !== t)), TOAST_MS)
+    // The array holds reactive proxies of the toasts, so compare the raw object: comparing the
+    // proxy to `t` never matched, and lines stayed up until newer ones pushed them out.
+    setTimeout(() => (toasts.value = toasts.value.filter((x) => toRaw(x) !== t)), TOAST_MS)
   }
 
   function setPet(p: Pet): void {
@@ -97,6 +103,7 @@ export const useApp = defineStore('app', () => {
       addToast(t)
     })
     api.on('tracker:nearby', (n) => (nearby.value = n))
+    api.on('tracker:shop', (s) => (shop.value = s))
     api.on('update:status', (u) => (update.value = u))
     api.on('hud:editing', (e) => (hudEditing.value = e))
     api.on('panel:visible', (v) => (panelVisible.value = v))
@@ -105,6 +112,7 @@ export const useApp = defineStore('app', () => {
     status.value = t.status
     petMap.value = new Map(t.pets.map((p) => [p.id, p]))
     nearby.value = t.nearby
+    shop.value = t.shop
     update.value = await api.invoke('update:get')
     ready.value = true
   }
@@ -138,7 +146,7 @@ export const useApp = defineStore('app', () => {
   }
 
   return {
-    settings, status, pets, toasts, fighting, collectionView, hudEditing, panelVisible, ready, sessionSouls, recentPets, openPetId, nearby, update,
+    settings, status, pets, toasts, fighting, collectionView, shop, hudEditing, panelVisible, ready, sessionSouls, recentPets, openPetId, nearby, update,
     init, set, setHud, togglePin, openPet, hiddenPet,
   }
 })

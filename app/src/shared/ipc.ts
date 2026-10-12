@@ -4,7 +4,7 @@
  * pattern is marnis-app's (shared/ipc-contract.ts), with this app's channels.
  */
 import type { Point, SettingKey, Settings } from './settings.ts'
-import type { Nearby, Pet, SoulToast, TrackerStatus } from './tracker.ts'
+import type { Nearby, Pet, ShopStock, SoulToast, TrackerStatus } from './tracker.ts'
 import type { UpdateStatus } from './update.ts'
 
 /** Renderer → main, request/response. */
@@ -16,7 +16,7 @@ export interface InvokeChannels {
   'settings:all': { args: []; result: Settings }
   'settings:set': { args: [key: SettingKey, value: unknown]; result: void }
 
-  'tracker:get': { args: []; result: { status: TrackerStatus; pets: Pet[]; nearby: Nearby } }
+  'tracker:get': { args: []; result: { status: TrackerStatus; pets: Pet[]; nearby: Nearby; shop: ShopStock[] } }
   'tracker:setSouls': { args: [pet: number, souls: number]; result: void }
   'tracker:setName': { args: [pet: number, name: string]; result: void }
   'tracker:restart': { args: []; result: void }
@@ -36,6 +36,10 @@ export interface InvokeChannels {
   'hud:moveTo': { args: [to: Point]; result: void }
   'hud:dragEnd': { args: []; result: void }
   'hud:resize': { args: [size: { width: number; height: number }]; result: void }
+  'merchant:moveTo': { args: [to: Point]; result: void }
+  'merchant:dragEnd': { args: []; result: void }
+  'merchant:resize': { args: [size: { width: number; height: number }]; result: void }
+  'merchant:close': { args: []; result: void }
 }
 
 /** Main → renderer, broadcast. */
@@ -48,6 +52,8 @@ export interface EventChannels {
   'tracker:nearby': Nearby
   /** You killed something (at most every 5 s): keeps the HUD up between souls. */
   'tracker:combat': number
+  /** The merchant's stock: the latest of each tab opened, until its restock. */
+  'tracker:shop': ShopStock[]
   'hud:editing': boolean
   'panel:visible': boolean
   'update:status': UpdateStatus
@@ -72,8 +78,9 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'update:get', 'update:check', 'update:download', 'update:install',
   'bubble:moveTo', 'bubble:dragEnd', 'panel:toggle', 'panel:hide', 'panel:setExpanded',
   'hud:setEditing', 'hud:moveTo', 'hud:dragEnd', 'hud:resize',
+  'merchant:moveTo', 'merchant:dragEnd', 'merchant:resize', 'merchant:close',
 ]
 
 export const EVENT_CHANNELS: readonly EventChannel[] = [
-  'settings:changed', 'tracker:status', 'tracker:pets', 'tracker:pet', 'tracker:soul', 'tracker:nearby', 'tracker:combat', 'hud:editing', 'panel:visible', 'update:status',
+  'settings:changed', 'tracker:status', 'tracker:pets', 'tracker:pet', 'tracker:soul', 'tracker:nearby', 'tracker:combat', 'tracker:shop', 'hud:editing', 'panel:visible', 'update:status',
 ]

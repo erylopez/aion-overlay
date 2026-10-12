@@ -14,7 +14,7 @@ import { moveDataFolder, OLD_NAME } from './migrate.ts'
 import { killTrackerNow, log, stopTracker, tracker } from './tracker.ts'
 import { createTray, setTrayTooltip } from './tray.ts'
 import { startUpdateChecks } from './update.ts'
-import { applyWindowSettings, markQuitting, refreshHud, showPanel } from './windows.ts'
+import { applyWindowSettings, markQuitting, refreshHud, showMerchant, showPanel } from './windows.ts'
 
 // The name is also the data folder's (%APPDATA%\<name>): the old one is moved across once.
 app.setName(DISPLAY_NAME)
@@ -38,6 +38,8 @@ if (!app.requestSingleInstanceLock()) {
       broadcast('settings:changed', all)
       applyWindowSettings()
     })
+    // A tab of the Black Cloud Merchant was opened: its pets worth buying, in their own window.
+    tracker.onShop(() => showMerchant())
     tracker.onStatus((status) => {
       refreshHud()
       const what = {

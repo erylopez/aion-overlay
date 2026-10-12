@@ -39,7 +39,12 @@ export interface Settings {
      * next fight; 0 = never.
      */
     idleHideSeconds: number
+    /** Pop up the Black Cloud Merchant's pets worth buying when one of its tabs is opened. */
+    merchant: boolean
   }
+
+  /** Where the Black Cloud Merchant window sits (top-left, screen DIPs); null = top centre. */
+  merchantWindow: Point | null
 
   /** Hide every overlay window from screenshots, OBS and Discord (WDA_EXCLUDEFROMCAPTURE). */
   hideFromCapture: boolean
@@ -88,7 +93,9 @@ export const SETTINGS_DEFAULTS: Settings = {
     scale: 1,
     hideWithoutGame: true,
     idleHideSeconds: 45,
+    merchant: true,
   },
+  merchantWindow: null,
   hideFromCapture: false,
   faction: 'elyos',
   playerLevel: null,
@@ -115,6 +122,7 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
   const d = SETTINGS_DEFAULTS
   switch (key) {
     case 'bubble':
+    case 'merchantWindow':
       return point(value) as Settings[K]
     case 'panel': {
       const v = (value ?? {}) as Partial<Settings['panel']>
@@ -142,6 +150,7 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
         scale: num(v.scale, 0.75, 1.75, d.hud.scale),
         hideWithoutGame: bool(v.hideWithoutGame, d.hud.hideWithoutGame),
         idleHideSeconds: Math.round(num(v.idleHideSeconds, 0, 600, d.hud.idleHideSeconds)),
+        merchant: bool(v.merchant, d.hud.merchant),
       } as Settings[K]
     }
     case 'faction':

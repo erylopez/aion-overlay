@@ -12,8 +12,8 @@ import { bridge } from './bridge.ts'
 const CLICK_SLOP = 4
 
 export interface WindowDragOptions {
-  move: 'bubble:moveTo' | 'hud:moveTo'
-  end: 'bubble:dragEnd' | 'hud:dragEnd'
+  move: 'bubble:moveTo' | 'hud:moveTo' | 'merchant:moveTo'
+  end: 'bubble:dragEnd' | 'hud:dragEnd' | 'merchant:dragEnd'
   onClick?: () => void
 }
 

@@ -3,7 +3,9 @@
  *
  *   bubble  #/bubble  a small floating icon: drag it anywhere, click it to open the panel
  *   panel   #/panel   the app itself: collection, session, settings; opens beside the bubble
- *   hud     #/hud     the in-game overlay: click-through, sized to its content
+ *   hud       #/hud       the in-game overlay: click-through, sized to its content
+ *   merchant  #/merchant  the Black Cloud Merchant's pets worth buying: opened when a tab of the
+ *                         shop is, always movable, closed with its X
  *
  * Overlay rules carried over from marnis-app (docs/09 there): 'screen-saver' level so they sit
  * above a borderless game (exclusive fullscreen cannot be drawn over by anything), shown with
@@ -29,6 +31,8 @@ const EDGE = 24
 let bubble: BrowserWindow | null = null
 let panel: BrowserWindow | null = null
 let hud: BrowserWindow | null = null
+let merchant: BrowserWindow | null = null
+let merchantSize = { width: 0, height: 0 }
 let panelExpanded = false
 let hudEditing = false
 let hudSize = { width: 0, height: 0 }
@@ -294,12 +298,74 @@ export function hudDragEnded(): void {
   settings.set('hud', { ...settings.get('hud'), position: { x, y } })
 }
 
+// ---- merchant -------------------------------------------------------------------------------
+
+const MERCHANT_WIDTH = 400
+
+function merchantPosition(): Point {
+  const saved = settings.get('merchantWindow')
+  if (saved) return saved
+  const area = screen.getPrimaryDisplay().workArea
+  return { x: Math.round(area.x + area.width / 2 - MERCHANT_WIDTH / 2), y: area.y + 120 }
+}
+
+/**
+ * Open the merchant window (a tab of the shop was just opened), unless the setting is off. It
+ * shows once its page has measured itself, and stays hidden while there is nothing worth buying.
+ */
+export function showMerchant(): void {
+  if (!settings.get('hud').merchant) return
+  if (alive(merchant)) return refreshMerchant()
+  const p = merchantPosition()
+  const win = overlayWindow({ x: p.x, y: p.y, width: MERCHANT_WIDTH, height: 200 })
+  merchant = win
+  merchantSize = { width: 0, height: 0 }
+  win.on('closed', () => (merchant = null))
+  load(win, 'merchant')
+}
+
+/** The X: closed until a tab of the shop is opened again (a closed window frees its renderer). */
+export function closeMerchant(): void {
+  if (alive(merchant)) merchant.destroy()
+  merchant = null
+}
+
+function refreshMerchant(): void {
+  if (!alive(merchant)) return
+  const { width, height } = merchantSize
+  if (width > 0 && height > 0) {
+    const p = merchantPosition()
+    merchant.setBounds(clampToDisplay({ x: p.x, y: p.y, width, height }))
+    if (!merchant.isVisible()) merchant.showInactive()
+  } else if (merchant.isVisible()) {
+    merchant.hide()
+  }
+}
+
+export function resizeMerchant(size: { width: number; height: number }): void {
+  merchantSize = { width: Math.ceil(size.width), height: Math.ceil(size.height) }
+  refreshMerchant()
+}
+
+export function moveMerchant(to: Point): void {
+  if (!alive(merchant)) return
+  const { width, height } = merchant.getBounds()
+  merchant.setBounds(clampToDisplay({ x: to.x, y: to.y, width, height }))
+}
+
+export function merchantDragEnded(): void {
+  if (!alive(merchant)) return
+  const { x, y } = merchant.getBounds()
+  settings.set('merchantWindow', { x, y })
+}
+
 // ---- all ------------------------------------------------------------------------------------
 
 /** Settings that change how the windows behave, applied live. */
 export function applyWindowSettings(): void {
   const hidden = settings.get('hideFromCapture')
-  for (const w of [bubble, panel, hud]) if (alive(w)) w.setContentProtection(hidden)
+  for (const w of [bubble, panel, hud, merchant]) if (alive(w)) w.setContentProtection(hidden)
+  if (!settings.get('hud').merchant) closeMerchant()
   if (alive(panel)) {
     const onTop = settings.get('panelOnTop')
     panel.setAlwaysOnTop(onTop, 'screen-saver')
@@ -309,13 +375,14 @@ export function applyWindowSettings(): void {
 }
 
 /**
- * Close the bubble and the HUD, and the panel if it is hidden: a window that is only hidden keeps
- * its renderer process. An open panel stays open.
+ * Close the bubble, the HUD and the merchant window, and the panel if it is hidden: a window that
+ * is only hidden keeps its renderer process. An open panel stays open.
  */
 export function closeOverlays(): void {
-  for (const win of [bubble, hud]) if (alive(win)) win.destroy()
+  for (const win of [bubble, hud, merchant]) if (alive(win)) win.destroy()
   bubble = null
   hud = null
+  merchant = null
   hudEditing = false
   hudSize = { width: 0, height: 0 }
   if (alive(panel) && !panel.isVisible()) {
@@ -344,6 +411,12 @@ export function rebuildWindow(win: BrowserWindow): string | null {
     createHud()
     if (editing) hud!.webContents.once('did-finish-load', () => setHudEditing(true, false))
     return 'hud'
+  }
+  if (win === merchant) {
+    win.destroy()
+    merchant = null
+    showMerchant()
+    return 'merchant'
   }
   if (win === panel) {
     const visible = win.isVisible()

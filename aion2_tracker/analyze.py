@@ -29,6 +29,23 @@ def spawns_default() -> Path:
     return repo if repo.exists() else root / "data" / "spawns.json"
 
 
+def pets_default() -> Path:
+    """questlog.gg's pet list (id, name, genus), as the app keeps it; the packaged helper carries a
+    copy in data/."""
+    root = Path(__file__).resolve().parents[1]
+    repo = root / "app" / "src" / "renderer" / "src" / "data" / "pets.json"
+    return repo if repo.exists() else root / "data" / "pets.json"
+
+
+def load_genera(path: Path | None = None) -> dict[int, str]:
+    """Pet id -> genus ("fera", "cogni", ...). Empty if missing."""
+    try:
+        pets = json.loads(Path(path or pets_default()).read_text(encoding="utf-8"))["pets"]
+    except (OSError, ValueError, KeyError):
+        return {}
+    return {int(p["id"]): p["genus"] for p in pets if p.get("genus")}
+
+
 def load_droppers(path: Path | None = None) -> dict[int, int]:
     """Monster code -> the pet whose soul it drops (each monster drops one). Empty if missing."""
     path = path or spawns_default()

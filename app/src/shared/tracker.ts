@@ -48,10 +48,12 @@ export interface Nearby {
   world: number | null
   /** Where you are, in the map data's coordinates; from zone loads, teleports and your casts. */
   position: [number, number] | null
+  /** When the position last changed (ms since epoch, stamped by main); null while unknown. */
+  positionAt: number | null
   monsters: { npc: number; count: number }[]
 }
 
-export const NO_NEARBY: Nearby = { world: null, position: null, monsters: [] }
+export const NO_NEARBY: Nearby = { world: null, position: null, positionAt: null, monsters: [] }
 
 /** A pet the collection has no record of yet (seen nearby, or opened from the map). */
 export const blankPet = (id: number): Pet => ({ id, name: null, souls: 0, level: 0, levelEstimated: true, crystals: 0, session: 0 })
@@ -92,4 +94,25 @@ export function capProgress(pet: Pick<Pet, 'souls' | 'level'>): number {
   if (pet.level >= MAX_LEVEL) return 1
   const done = (LEVEL_BEFORE[pet.level] ?? 0) + pet.souls
   return Math.min(1, done / 105)
+}
+
+/** One item in the Black Cloud Merchant's stock, as the tab's `91 56` record gives it. */
+export interface ShopItem {
+  slot: number
+  /** The game's item id (questlog.gg's): see renderer/src/data/petItems.json for the pet ones. */
+  item: number
+  quantity: number
+  currency: number
+  base: number
+  price: number
+}
+
+/** One tab of the merchant's stock, from the last time it was opened. */
+export interface ShopStock {
+  tab: number
+  /** When the stock changes next (ms since epoch); null if the record did not say. */
+  nextAt: number | null
+  /** When the tab was opened (ms since epoch, stamped by main). */
+  at: number
+  items: ShopItem[]
 }

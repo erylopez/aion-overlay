@@ -103,6 +103,9 @@ const savePython = (): Promise<void> => store.set('tracker', { ...store.settings
         <SettingRow label="Hide without game traffic" hint="When the game has sent nothing for 15 seconds.">
           <Toggle :model-value="store.settings.hud.hideWithoutGame" @update:model-value="store.setHud({ hideWithoutGame: $event })" />
         </SettingRow>
+        <SettingRow label="Black Cloud Merchant pets" hint="When you open one of its tabs, a window lists the pets it sells that you have not maxed: prices, and where they spawn. Its X closes it.">
+          <Toggle :model-value="store.settings.hud.merchant" @update:model-value="store.setHud({ merchant: $event })" />
+        </SettingRow>
         <SettingRow label="Clear between fights" hint="After this long with no kills or drops the HUD clears and hides until the next fight.">
           <Slider
             :model-value="store.settings.hud.idleHideSeconds"

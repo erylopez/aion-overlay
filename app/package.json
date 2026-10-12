@@ -1,7 +1,7 @@
 {
   "name": "aion2-drop-tracker",
   "productName": "Aion2 Pet Tracker",
-  "version": "0.1.11",
+  "version": "0.1.17",
   "description": "In-game overlay for the Aion 2 drop tracker: pet souls and collection progress.",
   "private": true,
   "main": "./out/main/index.js",

@@ -406,3 +406,65 @@ def parse_cast(pkt: bytes) -> tuple[int, float, float] | None:
         if 1000 < abs(x) < 500_000 and 1000 < abs(y) < 500_000:
             return actor, x, y
     return None
+
+
+OP_SHOP = (0x91, 0x56)  # the Black Cloud Merchant's stock for one tab, sent when the tab is opened
+SHOP_RECORD = 34
+
+
+@dataclass(frozen=True)
+class ShopItem:
+    slot: int  # the shop's own product id
+    item: int  # the game's item id (questlog.gg's): "Pet: <name>" items grant a pet
+    quantity: int
+    currency: int
+    base: int  # the price before the discount
+    price: int
+
+
+@dataclass(frozen=True)
+class Shop:
+    tab: int
+    items: list[ShopItem]
+    next_at_ms: int | None  # when the stock changes next (ms since epoch, UTC)
+
+
+def _shop_record(b: bytes, o: int) -> ShopItem | None:
+    if o + SHOP_RECORD > len(b):
+        return None
+    slot, item = struct.unpack_from("<II", b, o)
+    quantity = struct.unpack_from("<Q", b, o + 8)[0]
+    currency = b[o + 17]
+    base, price = struct.unpack_from("<QQ", b, o + 18)
+    if not (0 < slot < 1 << 24 and 100_000_000 <= item < 1 << 32 and 0 < quantity < 1_000_000
+            and 0 < price <= base < 10**12):
+        return None
+    return ShopItem(slot, item, quantity, currency, base, price)
+
+
+def parse_shop(pkt: bytes) -> Shop | None:
+    """`91 56 <tab u8> <count u8>` then per item `<slot u32> <item u32> <quantity u64> <discount
+    tier u8> <currency u8> <base price u64> <price u64>`, then `<next restock u64 ms>`. Found
+    2026-10-12 (captures/shop_open.pcap): sent when a Black Cloud Merchant tab is opened, one per
+    tab; the ten Pets-tab records matched the screen (items, discounts, both prices) and the
+    trailing time was the next hour, when the stock changes. Some records start one byte later
+    (an extra 0x55 or 0x05 before them, not decoded), so each is tried where expected and one byte
+    on. The discount tier byte (00 = 10%, 01 = 20%, 03 = 50%) is not kept: the prices say it."""
+    if opcode(pkt) != OP_SHOP:
+        return None
+    _, vlen = read_varint(pkt, 0)
+    b = pkt[vlen + 2 :]
+    if len(b) < 2:
+        return None
+    tab, count, o = b[0], b[1], 2
+    items = []
+    for _ in range(count):
+        for start in (o, o + 1):
+            if rec := _shop_record(b, start):
+                items.append(rec)
+                o = start + SHOP_RECORD
+                break
+        else:
+            return None
+    next_at = struct.unpack_from("<Q", b, o)[0] if o + 8 <= len(b) else None
+    return Shop(tab, items, next_at if next_at and 1.5e12 < next_at < 4e12 else None)

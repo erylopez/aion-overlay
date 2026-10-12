@@ -158,3 +158,46 @@ export function currentWorld(near: Nearby, data: SpawnData): number | null {
   }
   return [...votes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
 }
+
+/** questlog.gg's zone groups: the continents a pet's soul monsters can spawn on. */
+export type Continent = 'elyos' | 'asmodians' | 'abyss'
+export const CONTINENTS: { id: Continent; label: string }[] = [
+  { id: 'elyos', label: 'Elyos' },
+  { id: 'asmodians', label: 'Asmodian' },
+  { id: 'abyss', label: 'Abyss' },
+]
+
+/** Each pet's continents: every zone group one of its soul monsters spawns in. */
+export function petContinents(data: SpawnData): Map<number, Set<string>> {
+  const out = new Map<number, Set<string>>()
+  for (const [pet, droppers] of Object.entries(data.pets)) {
+    const groups = new Set<string>()
+    for (const d of droppers) for (const w of d.worlds) if (data.worlds[w.world]) groups.add(data.worlds[w.world]!.group)
+    out.set(Number(pet), groups)
+  }
+  return out
+}
+
+/**
+ * How far `at` is from the nearest spawn of a pet's soul monsters in `world`, in game units; null
+ * when none spawns there. `at` is in the spawn points' convention (x, -y), as Nearby reports it.
+ */
+export function petDistance(data: SpawnData, pet: number, world: number, at: [number, number]): number | null {
+  let best: number | null = null
+  for (const d of data.pets[pet] ?? []) {
+    for (const w of d.worlds) {
+      if (w.world !== world) continue
+      for (const [x, y] of w.points) {
+        const dist = Math.hypot(x - at[0], y - at[1])
+        if (best === null || dist < best) best = dist
+      }
+    }
+  }
+  return best
+}
+
+/** A distance for people: the game's units are taken as centimetres (Unreal's). */
+export function formatDistance(units: number): string {
+  const m = units / 100
+  return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`
+}
