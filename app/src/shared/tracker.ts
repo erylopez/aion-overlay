@@ -40,6 +40,8 @@ export interface TrackerStatus {
   synced: { at: number; pets: number; souls: number } | null
   /** Where the collection is saved. */
   dataFile: string | null
+  /** The character whose collection this is (pet levels are per character); null until seen. */
+  character: string | null
 }
 
 /** What is loaded around you, from the tracker: monsters by code, your zone and position. */

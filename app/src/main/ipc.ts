@@ -1,6 +1,7 @@
 /** Every invoke handler, typed against the contract in shared/ipc.ts. */
 import { app, ipcMain, shell } from 'electron'
 import { settings } from './settings.ts'
+import { timers } from './timers.ts'
 import { logPath, tracker } from './tracker.ts'
 import { updates } from './update.ts'
 import {
@@ -17,6 +18,8 @@ import {
   resizeMerchant,
   setHudEditing,
   setPanelExpanded,
+  showPetInPanel,
+  showTimersInPanel,
   togglePanel,
 } from './windows.ts'
 import type { InvokeArgs, InvokeChannel, InvokeResult } from '../shared/ipc.ts'
@@ -51,7 +54,7 @@ export function registerIpc(): void {
     settings.set(key as SettingKey, value)
   })
 
-  handle('tracker:get', () => ({ status: tracker.status(), pets: tracker.pets(), nearby: tracker.nearby(), shop: tracker.shop() }))
+  handle('tracker:get', () => ({ status: tracker.status(), pets: tracker.pets(), nearby: tracker.nearby(), shop: tracker.shop(), kina: tracker.kina(), fieldBosses: tracker.fieldBosses() }))
   handle('tracker:setSouls', (pet, souls) => {
     if (Number.isInteger(pet) && Number.isInteger(souls) && souls >= 0 && souls < 100000) tracker.setSouls(pet, souls)
   })
@@ -59,6 +62,7 @@ export function registerIpc(): void {
     if (Number.isInteger(pet) && typeof name === 'string' && name.trim()) tracker.setName(pet, name.trim().slice(0, 60))
   })
   handle('tracker:restart', () => tracker.restart())
+  handle('tracker:resetSession', () => tracker.resetSession())
 
   handle('update:get', () => updates.status())
   handle('update:check', () => updates.check())
@@ -90,4 +94,14 @@ export function registerIpc(): void {
     if (isPoint({ x: size?.width, y: size?.height })) resizeMerchant(size)
   })
   handle('merchant:close', () => closeMerchant())
+  handle('timers:get', () => timers.alerting())
+  handle('timers:dismiss', () => timers.dismiss())
+  handle('timers:open', () => {
+    const ids = timers.alerting().map((a) => a.id)
+    timers.dismiss()
+    showTimersInPanel(ids)
+  })
+  handle('panel:showPet', (pet) => {
+    if (Number.isInteger(pet)) showPetInPanel(pet)
+  })
 }

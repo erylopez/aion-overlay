@@ -3,7 +3,9 @@
  * handlers against it, preload builds the bridge from it, the renderer calls the bridge. The
  * pattern is marnis-app's (shared/ipc-contract.ts), with this app's channels.
  */
+import type { KinaSession } from './kina.ts'
 import type { Point, SettingKey, Settings } from './settings.ts'
+import type { FieldBosses, TimerAlert, TimerId } from './timers.ts'
 import type { Nearby, Pet, ShopStock, SoulToast, TrackerStatus } from './tracker.ts'
 import type { UpdateStatus } from './update.ts'
 
@@ -16,10 +18,12 @@ export interface InvokeChannels {
   'settings:all': { args: []; result: Settings }
   'settings:set': { args: [key: SettingKey, value: unknown]; result: void }
 
-  'tracker:get': { args: []; result: { status: TrackerStatus; pets: Pet[]; nearby: Nearby; shop: ShopStock[] } }
+  'tracker:get': { args: []; result: { status: TrackerStatus; pets: Pet[]; nearby: Nearby; shop: ShopStock[]; kina: KinaSession; fieldBosses: FieldBosses } }
   'tracker:setSouls': { args: [pet: number, souls: number]; result: void }
   'tracker:setName': { args: [pet: number, name: string]; result: void }
   'tracker:restart': { args: []; result: void }
+  /** Start the session again: its souls and its Kina. */
+  'tracker:resetSession': { args: []; result: void }
 
   'update:get': { args: []; result: UpdateStatus }
   'update:check': { args: []; result: void }
@@ -40,6 +44,13 @@ export interface InvokeChannels {
   'merchant:dragEnd': { args: []; result: void }
   'merchant:resize': { args: [size: { width: number; height: number }]; result: void }
   'merchant:close': { args: []; result: void }
+  /** The timers alerting now; and dismissing them (a click on the bubble). */
+  'timers:get': { args: []; result: TimerAlert[] }
+  'timers:dismiss': { args: []; result: void }
+  /** The bubble was clicked during an alert: dismiss it and show its timer in the panel. */
+  'timers:open': { args: []; result: void }
+  /** Open the panel on a pet's drop locations (from the merchant window). */
+  'panel:showPet': { args: [pet: number]; result: void }
 }
 
 /** Main → renderer, broadcast. */
@@ -54,6 +65,18 @@ export interface EventChannels {
   'tracker:combat': number
   /** The merchant's stock: the latest of each tab opened, until its restock. */
   'tracker:shop': ShopStock[]
+  /** This session's Kina, whenever the balance changes. */
+  'tracker:kina': KinaSession
+  /** The field bosses, whenever the map's list changes them. */
+  'tracker:fieldBosses': FieldBosses
+  /** A timer started alerting (once per start: the chime). */
+  'timers:alert': TimerAlert
+  /** Every timer alerting now (the bubble shakes while there are any). */
+  'timers:alerting': TimerAlert[]
+  /** To the panel: show this pet's drop locations. */
+  'panel:showPet': number
+  /** To the panel: show the Timers tab and highlight these timers (the ones that alerted). */
+  'panel:showTimers': TimerId[]
   'hud:editing': boolean
   'panel:visible': boolean
   'update:status': UpdateStatus
@@ -74,13 +97,13 @@ export interface Bridge {
 export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'app:info', 'app:quit', 'app:openPath',
   'settings:all', 'settings:set',
-  'tracker:get', 'tracker:setSouls', 'tracker:setName', 'tracker:restart',
+  'tracker:get', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession',
   'update:get', 'update:check', 'update:download', 'update:install',
   'bubble:moveTo', 'bubble:dragEnd', 'panel:toggle', 'panel:hide', 'panel:setExpanded',
   'hud:setEditing', 'hud:moveTo', 'hud:dragEnd', 'hud:resize',
-  'merchant:moveTo', 'merchant:dragEnd', 'merchant:resize', 'merchant:close',
+  'merchant:moveTo', 'merchant:dragEnd', 'merchant:resize', 'merchant:close', 'panel:showPet', 'timers:get', 'timers:dismiss', 'timers:open',
 ]
 
 export const EVENT_CHANNELS: readonly EventChannel[] = [
-  'settings:changed', 'tracker:status', 'tracker:pets', 'tracker:pet', 'tracker:soul', 'tracker:nearby', 'tracker:combat', 'tracker:shop', 'hud:editing', 'panel:visible', 'update:status',
+  'settings:changed', 'tracker:status', 'tracker:pets', 'tracker:pet', 'tracker:soul', 'tracker:nearby', 'tracker:combat', 'tracker:shop', 'tracker:kina', 'tracker:fieldBosses', 'panel:showPet', 'panel:showTimers', 'timers:alert', 'timers:alerting', 'hud:editing', 'panel:visible', 'update:status',
 ]

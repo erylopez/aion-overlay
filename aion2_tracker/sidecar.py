@@ -3,7 +3,12 @@
     python -m aion2_tracker.sidecar [--data collection.json] [--paused] [--replay X.pcap --speed 4]
 
 stdout, one JSON object per line (nothing else is ever written there):
-    {"type": "ready", "pets": [...]}                    on start, the saved collection
+    {"type": "ready", "pets": [...], "character": {"name", "server"} | null}
+                                                        on start, the saved collection
+    {"type": "character", "name": "Cro", "server": 1104, "switched": true, "pets": [...]}
+                                                        a character entered the world that is not
+                                                        the one the collection was: its own
+                                                        collection (switched), or the first one seen
     {"type": "status", "state": "listening" | "locked" | "idle" | "stopped" | "error", ...}
                                                         idle: not capturing (paused)
     {"type": "heartbeat", "lastPacketAgo": 1.2}         every 2 s while capturing: seconds since
@@ -18,8 +23,12 @@ stdout, one JSON object per line (nothing else is ever written there):
                                                         that kill's monster is not known
     {"type": "pet", "pet": {...}}                       after an edit
     {"type": "combat"}                                  you killed something (at most every 5 s)
+    {"type": "kina", "balance": 3769926}                your Kina, whenever it changes
     {"type": "shop", "tab": 104, "nextAt": ms | null, "items": [{"slot", "item", "quantity",
      "currency", "base", "price"}]}                     a Black Cloud Merchant tab was opened
+    {"type": "fieldBosses", "world": 1010, "bosses": [{"id": 101021, "up": false, "at": ms}]}
+                                                        the map's field boss list, when it changes
+                                                        (up: spawned at; dead: respawns at)
     {"type": "snapshot", "pets": [...]}                 answer to {"cmd": "snapshot"}, then a nearby
     {"type": "nearby", "world": 1010, "position": [x, y] | null, "monsters": [{"npc", "count"}]}
                                                         what is loaded around you, when it changes
@@ -27,6 +36,8 @@ stdout, one JSON object per line (nothing else is ever written there):
 stdin, one JSON object per line:
     {"cmd": "snapshot"} · {"cmd": "set", "pet": 1006, "souls": 32}
     {"cmd": "name", "pet": 1006, "name": "Meadow Sparkie"} · {"cmd": "quit"}
+    {"cmd": "resetSession"}             start the session's soul counts again; answered with a
+                                        snapshot
     {"cmd": "capture", "on": false}     stop capturing (the game closed) or start again. Paused,
                                         the helper only serves the collection; a session's counts
                                         carry on across a pause. --paused starts it that way.
@@ -128,7 +139,7 @@ def main() -> None:
             if tracker.nearby_dirty:
                 emit({"type": "nearby", **tracker.nearby()})
 
-    emit({"type": "ready", "pets": tracker.snapshot(), "data": str(store), "replay": bool(a.replay)})
+    emit({"type": "ready", "pets": tracker.snapshot(), "character": tracker.character(), "data": str(store), "replay": bool(a.replay)})
     if a.paused and not a.replay:
         emit({"type": "status", "state": "idle"})
     else:
@@ -146,6 +157,9 @@ def main() -> None:
                 emit({"type": "nearby", **tracker.nearby()})
             elif cmd == "set":
                 emit({"type": "pet", "pet": tracker.set_souls(int(msg["pet"]), int(msg["souls"]))})
+            elif cmd == "resetSession":
+                tracker.reset_session()
+                emit({"type": "snapshot", "pets": tracker.snapshot()})
             elif cmd == "name":
                 emit({"type": "pet", "pet": tracker.set_name(int(msg["pet"]), str(msg["name"]))})
             elif cmd == "capture":

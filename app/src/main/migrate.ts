@@ -1,7 +1,7 @@
 /**
- * 0.1.11 renamed the app from "Aion 2 Drop Tracker" to "Aion2 Pet Tracker", and with it the data
- * folder: %APPDATA%\Aion 2 Drop Tracker -> %APPDATA%\Aion2 Pet Tracker. On the first start after
- * the rename the old folder is moved across whole (collection, settings, logs, the updater's id),
+ * The app was renamed twice, and its data folder with it: "Aion 2 Drop Tracker" became "Aion2 Pet
+ * Tracker" in 0.1.11, and that became "Nyerk" in 0.2.0. On the first start after a rename the old
+ * folder is moved across whole (collection, settings, logs, the updater's id, the field bosses),
  * before anything reads or writes the new one. If it cannot be moved, the collection and settings
  * are copied instead and the old folder is left as it was. index.ts calls it right after
  * app.setName(), before the single-instance lock or anything else uses the folder. (No Electron
@@ -10,7 +10,8 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
-export const OLD_NAME = 'Aion 2 Drop Tracker'
+/** The data folders of older names, newest first: an install that skipped versions has the oldest. */
+export const OLD_NAMES = ['Aion2 Pet Tracker', 'Aion 2 Drop Tracker']
 
 /**
  * Move the app's own files from `from` into `to`, drop the rest (Chromium's caches and state, which
@@ -53,4 +54,4 @@ export function moveDataFolder(from: string, to: string): string {
 }
 
 /** The app's own files in its data folder; everything else there is Chromium's. */
-const APP_FILES = ['collection.json', 'settings.json', 'logs', '.updaterId']
+const APP_FILES = ['collection.json', 'settings.json', 'logs', '.updaterId', 'fieldbosses.json', 'machine-id']

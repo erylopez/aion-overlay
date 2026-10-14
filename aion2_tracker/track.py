@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import copy
 import json
 import sys
 import threading
@@ -34,6 +35,9 @@ MAX_LEVEL = 3
 NAME_WINDOW_S = 1.5
 # A "combat" event at most this often: the overlay only needs to know fighting is going on.
 COMBAT_EVERY_S = 5.0
+# How soon after a login sync the record naming the character comes (same frame bundle in the
+# captures): a switch of character within this moves the sync to the new one.
+SYNC_SWITCH_S = 30.0
 
 
 def load(path: Path = STORE) -> dict:
@@ -122,7 +126,9 @@ class Tracker:
         self.genera = load_genera() if genera is None else genera
         self.mob_code: dict[int, int | None] = {}
         self.recent: collections.deque = collections.deque(maxlen=64)  # (ts, mob entity)
-        self.session: collections.Counter = collections.Counter()
+        # Each character's session counts; `session` is the one playing.
+        self.sessions: dict[str | None, collections.Counter] = {}
+        self.session: collections.Counter = self.sessions.setdefault(self.data.get("current"), collections.Counter())
         # The capture thread and the overlay's edits both change `data`.
         self.lock = threading.RLock()
         # Around you: the monsters loaded in your view (entity -> mob code), your zone and your
@@ -139,6 +145,11 @@ class Tracker:
         # Which entity is you: the player credited with the kills just before your souls.
         self.credits: collections.deque = collections.deque(maxlen=32)  # (ts, mob, player entity)
         self.last_combat = float("-inf")
+        # The collection as it was before the last login sync, and that sync: the sync comes just
+        # before the record that says who you are, so a switch of character moves it across.
+        self.before_sync: tuple[float, dict, P.Collection] | None = None
+        # The map's field boss list, as last passed on: it comes every 3 s, unchanged mostly.
+        self.field_bosses: tuple | None = None
         self.self_votes: collections.Counter = collections.Counter()
 
     def on_packet(self, ts: float, pkt: bytes) -> None:
@@ -178,10 +189,21 @@ class Tracker:
         elif (c := P.parse_cast(pkt)) and c[0] == self.self_id():
             self.position = (c[1], -c[2])
             self.nearby_dirty = True
+        if (who := P.parse_character(pkt)) is not None:
+            self._character(ts, who)
         if soul := P.parse_soul(pkt):
             self._soul(ts, soul)
         elif crystal := P.parse_crystal(pkt):
             self._crystal(ts, crystal)
+        elif (kina := P.parse_kina(pkt)) is not None:
+            # The balance as is: the app works out what was earned (and per hour) from the changes.
+            self.on_event({"type": "kina", "ts": ts, "balance": kina})
+        elif bosses := P.parse_field_bosses(pkt):
+            key = (bosses.world, tuple((b.id, b.up, b.at_ms) for b in bosses.bosses))
+            if key != self.field_bosses:
+                self.field_bosses = key
+                self.on_event({"type": "fieldBosses", "ts": ts, "world": bosses.world,
+                               "bosses": [{"id": b.id, "up": b.up, "at": b.at_ms} for b in bosses.bosses]})
         elif shop := P.parse_shop(pkt):
             # The Black Cloud Merchant's stock, as the tab just opened shows it: passed on as is
             # (the app knows which items are pets, and which pets are worth buying).
@@ -227,6 +249,11 @@ class Tracker:
         with self.lock:
             return [self.view(pid) for pid in self.data["pets"]]
 
+    def reset_session(self) -> None:
+        """Start the session's counts again (the collection itself is untouched)."""
+        with self.lock:
+            self.session.clear()
+
     def set_souls(self, pid: int, souls: int) -> dict:
         with self.lock:
             self._pet(pid)["souls"] = souls
@@ -246,8 +273,52 @@ class Tracker:
         if self.persist:
             save(self.data, self.store)
 
-    def _sync(self, ts: float, coll: P.Collection) -> None:
+    def character(self) -> dict | None:
+        """The character playing (the one the collection is), or None before one was seen."""
+        name = self.data.get("current")
+        return {"name": name, "server": self.data.get("characters", {}).get(name, {}).get("server")} if name else None
+
+    def _character(self, ts: float, who: P.Character) -> None:
+        """Pet levels are per character: each has its own collection (souls, levels, crystals),
+        saved under `characters` while another plays. What the tracker learned of which monster
+        drops which pet (the votes) is the same for all, and goes along to the one switched to."""
+        chars = self.data.setdefault("characters", {})
+        old = self.data.get("current")
+        if who.name == old:
+            if who.server is not None and chars.get(old, {}).get("server") != who.server:
+                chars.setdefault(old, {})["server"] = who.server
+                self._save()
+            return
+        resync = None
+        if old is not None:
+            # A login sync just before this was the new character's, not the old one's: undo it.
+            if self.before_sync and ts - self.before_sync[0] <= SYNC_SWITCH_S:
+                _, before, resync = self.before_sync
+                self.data["pets"] = before
+            chars.setdefault(old, {})["pets"] = self.data["pets"]
+            entry = chars.setdefault(who.name, {})
+            pets = entry.pop("pets", {})
+            _merge_votes(self.data["pets"], pets)
+            self.data["pets"] = pets
+        # else: the first character seen takes the collection saved before characters were told apart
+        # (a sync just before is this character's own, already in it).
+        entry = chars.setdefault(who.name, {})
+        if who.server is not None:
+            entry["server"] = who.server
+        self.data["current"] = who.name
+        self.session = self.sessions.setdefault(who.name, collections.Counter())
+        self._save()
+        print(f"character: {who.name}" + (f" (was {old})" if old else ""), file=sys.stderr)
+        self.before_sync = None
+        if resync:
+            self._sync(ts, resync, keep=False)
+        self.on_event({"type": "character", "ts": ts, **self.character(), "switched": old is not None,
+                       "pets": [self.view(pid) for pid in self.data["pets"]]})
+
+    def _sync(self, ts: float, coll: P.Collection, keep: bool = True) -> None:
         """Entering the world sends the whole collection: take the server's numbers for every pet."""
+        if keep:
+            self.before_sync = (ts, copy.deepcopy(self.data["pets"]), coll)
         corrected = []
         for pid in coll.souls.keys() | coll.levels.keys():
             pet = self._pet(pid)
@@ -334,6 +405,16 @@ class Tracker:
 
     def _npc_name(self, code: int | None) -> str | None:
         return self.npcs.get(str(code), {}).get("name") if code else None
+
+def _merge_votes(src: dict, dst: dict) -> None:
+    """The monster names learned for each pet, from one character's collection into another's."""
+    for pid, pet in src.items():
+        if not pet.get("votes"):
+            continue
+        votes = dst.setdefault(pid, {"souls": 0, "votes": {}}).setdefault("votes", {})
+        for name, n in pet["votes"].items():
+            votes[name] = max(votes.get(name, 0), n)
+
 
 def show(data: dict, everything: bool = True) -> None:
     pets = sorted(data["pets"].items(), key=lambda kv: -kv[1]["souls"])

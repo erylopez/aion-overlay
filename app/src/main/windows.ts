@@ -20,7 +20,9 @@ import { join } from 'node:path'
 import { broadcast } from './broadcast.ts'
 import { settings } from './settings.ts'
 import { tracker } from './tracker.ts'
+import type { EventChannels } from '../shared/ipc.ts'
 import type { Point } from '../shared/settings.ts'
+import type { TimerId } from '../shared/timers.ts'
 
 const BUBBLE_SIZE = 64
 const PANEL_GAP = 8
@@ -77,6 +79,8 @@ function overlayWindow(options: Electron.BrowserWindowConstructorOptions): Brows
       // Overlays spend a lot of time hidden or behind the game; a throttled renderer stops
       // laying out and observing, and then never asks to be shown again.
       backgroundThrottling: false,
+      // The timers' chime plays without a click first (Chromium's default wants one).
+      autoplayPolicy: 'no-user-gesture-required',
     },
     ...options,
   })
@@ -194,6 +198,31 @@ export function showPanel(): void {
   }
   if (win.webContents.isLoading()) win.once('ready-to-show', reveal)
   else reveal()
+}
+
+/**
+ * Open the panel on a pet's drop locations (a click in the merchant window). A panel that is still
+ * loading is told once it has: its page listens from when it mounts.
+ */
+export function showPetInPanel(pet: number): void {
+  sendToPanel('panel:showPet', pet)
+}
+
+/** The panel on its Timers tab, these timers highlighted: a click on the bubble during an alert. */
+export function showTimersInPanel(ids: TimerId[]): void {
+  sendToPanel('panel:showTimers', ids)
+}
+
+/** Show the panel (open if hidden, never toggled shut) and tell it what to show, once loaded. */
+function sendToPanel<C extends 'panel:showPet' | 'panel:showTimers'>(channel: C, payload: EventChannels[C]): void {
+  showPanel()
+  const win = panel
+  if (!alive(win)) return
+  const send = (): void => {
+    if (!win.isDestroyed()) win.webContents.send(channel, payload)
+  }
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+  else send()
 }
 
 /** Larger while a map is open; back to the saved size after. Not persisted. */
@@ -360,6 +389,25 @@ export function merchantDragEnded(): void {
 }
 
 // ---- all ------------------------------------------------------------------------------------
+
+const ON_TOP_EVERY_MS = 5_000
+
+/**
+ * Keep the overlays above the game. Windows can leave an always-on-top window below a game that
+ * takes the foreground, with its topmost flag still set (seen 2026-10-13: the bubble 10 places below
+ * the borderless game window, invisible, while the app thought it was showing). So every few seconds
+ * each visible overlay is put back on top; moveTop() does not take the focus, and the game keeps it.
+ * The panel is left alone: it is a window to click into, and has its own on-top setting.
+ */
+export function startOnTopWatch(): void {
+  setInterval(() => {
+    for (const win of [bubble, hud, merchant]) {
+      if (!alive(win) || !win.isVisible()) continue
+      win.setAlwaysOnTop(true, 'screen-saver')
+      win.moveTop()
+    }
+  }, ON_TOP_EVERY_MS).unref()
+}
 
 /** Settings that change how the windows behave, applied live. */
 export function applyWindowSettings(): void {

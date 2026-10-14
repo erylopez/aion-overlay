@@ -7,11 +7,13 @@ import GenusPill from '@/components/GenusPill.vue'
 import LevelBadge from '@/components/LevelBadge.vue'
 import LevelBar from '@/components/LevelBar.vue'
 import PetIcon from '@/components/PetIcon.vue'
+import Sparkline from '@/components/Sparkline.vue'
 import { bridge } from '@/lib/bridge.ts'
 import { displayName, GENUS_LABEL, petInfo } from '@/lib/petDb.ts'
 import { nearbyPets, useSpawns, type NearbyPet } from '@/lib/spawns.ts'
 import { windowDrag } from '@/lib/windowDrag.ts'
 import { useApp } from '@/stores/app.ts'
+import { formatKina } from '@shared/kina.ts'
 import { blankPet, nextLevelSouls, type Pet } from '@shared/tracker.ts'
 
 const store = useApp()
@@ -60,6 +62,13 @@ const crystalLabel = (pet: number): string => {
   const genus = petInfo(pet)?.genus
   return genus ? `${GENUS_LABEL[genus]} crystal` : 'crystal'
 }
+/** Kina per hour at the top right, once there is a rate. */
+const kinaText = computed(() => {
+  if (!hud.value.kina) return null
+  if (store.kinaRate !== null) return `${formatKina(store.kinaRate)} Kina/h`
+  // Kina is coming in, but under a minute of it: no rate yet.
+  return store.kina.earned ? 'Kina/h measuring…' : null
+})
 /** Between fights (idle timeout): nothing to show, so the HUD hides; pinned pets included. */
 const resting = computed(() => !!hud.value.idleHideSeconds && !store.fighting)
 const empty = computed(
@@ -87,7 +96,7 @@ function report(): void {
 // A hidden window does not run ResizeObserver (Chromium pauses rendering there), and the HUD is
 // hidden exactly while it is empty: the first soul would never show it. So it also measures
 // itself after every change to what it shows, which works hidden or not.
-watch([nearRows, rows, toasts, resting, () => store.hudEditing, () => hud.value.scale, () => store.nearby], () => void nextTick(report), { deep: true })
+watch([nearRows, rows, toasts, kinaText, resting, () => store.hudEditing, () => hud.value.scale, () => store.nearby], () => void nextTick(report), { deep: true })
 
 let observer: ResizeObserver | null = null
 onMounted(() => {
@@ -126,10 +135,17 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
+        <div v-if="nearRows.length || kinaText" class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide">
+          <template v-if="nearRows.length"><span class="size-1.5 rounded-full bg-green" /><span class="text-green">Nearby</span></template>
+          <Sparkline
+            v-if="kinaText && store.kinaTimeline.length"
+            :values="store.kinaTimeline.map((p) => p.perHour)"
+            :stroke="1.5"
+            class="mx-1 h-3 min-w-0 flex-1 text-yellow opacity-80"
+          />
+          <span v-if="kinaText" class="ml-auto shrink-0 normal-case tabular-nums text-yellow" title="This session's Kina per hour">{{ kinaText }}</span>
+        </div>
         <section v-if="nearRows.length">
-          <div class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-green">
-            <span class="size-1.5 rounded-full bg-green" /> Nearby
-          </div>
           <div class="space-y-2">
             <div v-for="pet in nearRows" :key="pet.id" class="flex items-center gap-2">
               <PetIcon :id="pet.id" :size="30" />

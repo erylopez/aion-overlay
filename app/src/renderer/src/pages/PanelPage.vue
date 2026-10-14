@@ -1,10 +1,12 @@
 <script setup lang="ts">
-// The panel the bubble opens: the collection, this session, and settings. Escape or × hides it.
+// The panel the bubble opens: the collection, this session, the timers, and settings. Escape or ×
+// hides it.
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import CollectionTab from '@/components/panel/CollectionTab.vue'
 import PetDetail from '@/components/panel/PetDetail.vue'
 import SessionTab from '@/components/panel/SessionTab.vue'
 import SettingsTab from '@/components/panel/SettingsTab.vue'
+import TimersTab from '@/components/panel/TimersTab.vue'
 import StatusDot, { statusText } from '@/components/StatusDot.vue'
 import { bridge } from '@/lib/bridge.ts'
 import { useApp } from '@/stores/app.ts'
@@ -14,6 +16,7 @@ const store = useApp()
 const TABS = [
   { id: 'collection', label: 'Collection' },
   { id: 'session', label: 'Session' },
+  { id: 'timers', label: 'Timers' },
   { id: 'settings', label: 'Settings' },
 ] as const
 const tab = ref<(typeof TABS)[number]['id']>('collection')
@@ -25,8 +28,24 @@ const onKey = (e: KeyboardEvent): void => {
   if (store.openPetId !== null) store.openPet(null)
   else hide()
 }
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+// A pet clicked in the merchant window: its drop locations, as a click in the collection opens.
+let offShowPet: (() => void) | null = null
+// The bubble clicked during an alert: the Timers tab, on the timers that alerted.
+let offShowTimers: (() => void) | null = null
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  offShowPet = bridge().on('panel:showPet', (pet) => store.openPet(pet))
+  offShowTimers = bridge().on('panel:showTimers', (ids) => {
+    store.openPet(null)
+    tab.value = 'timers'
+    store.timerFocus = { ids, at: Date.now() }
+  })
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
+  offShowPet?.()
+  offShowTimers?.()
+})
 </script>
 
 <template>
@@ -38,6 +57,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <div class="flex items-center gap-1.5 text-xs text-darker">
           <StatusDot :status="store.status" />
           <span class="truncate">{{ statusText(store.status) }}</span>
+          <span v-if="store.status?.character" class="truncate text-dark" title="The character whose pets these are">· {{ store.status.character }}</span>
           <span v-if="store.sessionSouls" class="text-green">· +{{ store.sessionSouls }} souls</span>
         </div>
       </div>
@@ -100,6 +120,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <PetDetail v-else-if="store.openPetId !== null" :id="store.openPetId" />
       <CollectionTab v-else-if="tab === 'collection'" />
       <SessionTab v-else-if="tab === 'session'" />
+      <TimersTab v-else-if="tab === 'timers'" />
       <SettingsTab v-else />
     </main>
   </div>

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 // The floating icon. Drag it anywhere (it stays where it is dropped); click it to open or close
 // the panel. The ring says what the tracker is doing; the badge counts this session's souls and
-// the icon pulses when one drops.
-import { computed, ref, watch } from 'vue'
+// the icon pulses when one drops. A timer alerting chimes once and shakes the bubble every few
+// seconds until a click dismisses it.
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { statusText, statusTone } from '@/components/StatusDot.vue'
 import { bridge } from '@/lib/bridge.ts'
+import { playChime } from '@/lib/chime.ts'
 import { windowDrag } from '@/lib/windowDrag.ts'
 import { useApp } from '@/stores/app.ts'
 
@@ -20,13 +22,31 @@ watch(
   },
 )
 
+// The chime plays here: the bubble is up whenever the game is, and one window plays it once.
+let offAlert: (() => void) | null = null
+onMounted(() => {
+  offAlert = bridge().on('timers:alert', () => {
+    if (store.settings.timers.sound) playChime(store.settings.timers.volume)
+  })
+})
+onBeforeUnmount(() => offAlert?.())
+const shaking = computed(() => store.alerting.length > 0 && store.settings.timers.shake)
+
 const drag = windowDrag({
   move: 'bubble:moveTo',
   end: 'bubble:dragEnd',
-  onClick: () => void bridge().invoke('panel:toggle'),
+  onClick: () => {
+    // A click with an alert up dismisses it and opens the panel on that timer; otherwise it opens
+    // or closes the panel.
+    void bridge().invoke(store.alerting.length ? 'timers:open' : 'panel:toggle')
+  },
 })
 
-const title = computed(() => `${statusText(store.status)} · ${store.sessionSouls} souls this session`)
+const title = computed(() =>
+  store.alerting.length
+    ? 'A timer is up: click to see it'
+    : `${statusText(store.status)} · ${store.sessionSouls} souls this session`,
+)
 </script>
 
 <template>
@@ -38,6 +58,7 @@ const title = computed(() => `${statusText(store.status)} · ${store.sessionSoul
         'relative size-12 cursor-grab touch-none rounded-full ring-2 ring-offset-2 ring-offset-transparent transition active:cursor-grabbing',
         RING[tone],
         store.panelVisible ? 'scale-95' : 'hover:scale-105',
+        shaking && 'animate-alert',
       ]"
       @pointerdown="drag.onPointerDown"
       @pointerup="drag.onPointerUp"
@@ -70,5 +91,31 @@ const title = computed(() => `${statusText(store.status)} · ${store.sessionSoul
 }
 .animate-soul {
   animation: soul 700ms ease-out;
+}
+/* A timer is up: a short rotating shake, then still, every 3 s. */
+@keyframes alert {
+  0%,
+  30%,
+  100% {
+    transform: rotate(0);
+  }
+  5% {
+    transform: rotate(-14deg);
+  }
+  10% {
+    transform: rotate(12deg);
+  }
+  15% {
+    transform: rotate(-9deg);
+  }
+  20% {
+    transform: rotate(6deg);
+  }
+  25% {
+    transform: rotate(-3deg);
+  }
+}
+.animate-alert {
+  animation: alert 3s ease-in-out infinite;
 }
 </style>

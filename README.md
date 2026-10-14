@@ -1,6 +1,6 @@
-# Aion2 Pet Tracker
+# Nyerk
 
-A Windows overlay that counts your Aion 2 **Pet Collection** souls as they drop, so you don't have
+*Formerly Aion2 Pet Tracker.* A Windows overlay that counts your Aion 2 **Pet Collection** souls as they drop, so you don't have
 to keep opening the Pets menu.
 
 - **Live counts:** every soul is counted the moment it drops, with level-ups (5 → 25 → 75) and the
@@ -11,6 +11,13 @@ to keep opening the Pets menu.
   a feed of drops. It clears itself between fights.
 - **Collection panel:** every pet with its genus, level and progress; search, filter, pin pets to
   the HUD, and see where each soul drops on a map.
+- **Kina per hour:** this session's Kina rate with a timeline, in the panel and on the HUD.
+- **Timers:** the game's events (Shugo Festival, the Black Cloud Merchant, rifts, the siege…) and
+  Verteron's field bosses, read from the map's field boss list, with optional alerts. Field boss
+  times are shared between players so they stay right when you have not opened the map.
+- **Black Cloud Merchant:** when you open one of its tabs, a window lists the pets it sells that
+  you have not maxed, with where their soul monsters spawn.
+- **One collection per character:** switching to an alt shows that character's pets.
 - **Stays out of the way:** it sits in the tray and sleeps while Aion 2 is closed, waking when the
   game starts.
 
@@ -22,10 +29,15 @@ The tracker **only listens** and functions the exact same as popular DPS Meters 
 [Npcap](https://npcap.com). It never sends anything to the game
 or its servers, never reads or changes the game's memory, and sends no input.
 
+The app talks only to **nyerk.app**: to check for updates, and (unless you switch off "Share
+field boss timers") to send the field boss times your map shows and get other players' back. That
+carries your game server's id and an anonymous hash of your PC, never your character's name or
+position.
+
 ## Install
 
 1. Install [Npcap](https://npcap.com) (the default options are fine).
-2. Download `Aion2PetTracker-Setup-<version>.exe` from the
+2. Download `Nyerk-Setup-<version>.exe` from the
    [latest release](../../releases/latest) and run it. It installs for your Windows account only.
    The installer is not code-signed, so Windows may show "Windows protected your PC": choose
    **More info → Run anyway**.

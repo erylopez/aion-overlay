@@ -408,6 +408,130 @@ def parse_cast(pkt: bytes) -> tuple[int, float, float] | None:
     return None
 
 
+OP_SELF = (0x33, 0x36)  # you, on every zone entry: entity, name and server among much else
+
+
+@dataclass(frozen=True)
+class Character:
+    name: str
+    server: int
+
+
+def _name(b: bytes, pos: int) -> str | None:
+    """A length-prefixed character name at `pos`: 1-32 bytes of UTF-8 letters and digits."""
+    n = b[pos] if pos < len(b) else 0
+    if not 1 <= n <= 32 or pos + 1 + n > len(b):
+        return None
+    try:
+        name = b[pos + 1 : pos + 1 + n].decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    return name if name.isalnum() else None
+
+
+def parse_character(pkt: bytes) -> Character | None:
+    """Which character you are: `33 36 <entity varint> <5 bytes> <len u8> <name> <server u16 LE>
+    ...` (~2.2 KB), once at every zone entry, logins included (right after the collection, `00 90`).
+    Identified 2026-10-13 in login1, chat_login and zones1. Its name is the first length-prefixed
+    one within a few bytes of the entity.
+
+    Not `39 8a <len> <name>`: it named you at login, but gartua.pcap has six of them naming other
+    players around (online notices?), and 0.1.25 switched collections on them."""
+    if opcode(pkt) != OP_SELF:
+        return None
+    _, vlen = read_varint(pkt, 0)
+    b = pkt[vlen + 2 :]
+    _, pos = read_varint(b, 0)
+    for p in range(pos, min(pos + 12, len(b))):
+        if (name := _name(b, p)) is not None:
+            end = p + 1 + len(name.encode())
+            return Character(name, int.from_bytes(b[end : end + 2], "little")) if end + 2 <= len(b) else None
+    return None
+
+
+OP_ITEM = (0x1B, 0x56)  # an inventory stack's new count; Kina is one of them
+KINA_ITEM = bytes.fromhex("3f337037")
+
+
+def parse_kina(pkt: bytes) -> int | None:
+    """Your Kina balance, from the `1b 56` record of its stack:
+    `1b 56 01 01 00 <u32> <u32> 3f 33 70 37 <balance u64 LE> ...` (44 bytes with the length).
+    Identified 2026-10-13 in kills1, sparkie_long, lv3_crystals and lv3_cogni: one after each kill
+    that dropped Kina, the balance only ever going up between them (+161 to +362 at Lv13 Cairn Togs).
+    The same opcode carries other stacks (crystals, materials) with other item bytes."""
+    if opcode(pkt) != OP_ITEM:
+        return None
+    _, vlen = read_varint(pkt, 0)
+    b = pkt[vlen + 2 :]
+    if len(b) < 23 or b[0] != 0x01 or b[11:15] != KINA_ITEM:
+        return None
+    return int.from_bytes(b[15:23], "little")
+
+
+OP_FIELD_BOSSES = (0x01, 0x91)  # the map's field boss list for your zone, every ~3 s while the map is open
+
+
+@dataclass(frozen=True)
+class FieldBoss:
+    id: int  # the list's own id: 101001-101024 in Verteron (zone 1010 * 100 + n)
+    up: bool
+    at_ms: int  # up: when it spawned; dead: when it respawns
+    position: tuple[float, float, float] | None  # where it is, while up
+
+
+@dataclass(frozen=True)
+class FieldBosses:
+    world: int
+    bosses: list[FieldBoss]
+
+
+def parse_field_bosses(pkt: bytes) -> FieldBosses | None:
+    """`01 91 <u16> <world u32> <count u8>` then per boss: up `01 <id varint> <x y z f32> [1 byte]
+    <spawned u64 ms>`, dead `00 <id varint> <respawns u64 ms>`. Identified 2026-10-13 (gartua.pcap,
+    fieldboss_list.pcap): sent every ~3 s while the map is open, never with it closed. Eternal
+    Gartua (101021) turned up 0.5 s after its spawn and dead 0.5 s after its death, its respawn
+    then 12 h on; the dead bosses' times matched the in-game list to the second, and each up boss's
+    position is its questlog.gg marker's (y negated). Some entries, up or dead, carry a byte more
+    before the time (unknown), so the time is found where an ms timestamp fits."""
+    if opcode(pkt) != OP_FIELD_BOSSES:
+        return None
+    _, vlen = read_varint(pkt, 0)
+    b = pkt[vlen + 2 :]
+    if len(b) < 7:
+        return None
+    world, n = int.from_bytes(b[2:6], "little"), b[6]
+    pos, out = 7, []
+    for _ in range(n):
+        if pos >= len(b) or b[pos] not in (0, 1):
+            return None
+        up = b[pos] == 1
+        bid, ln = read_varint(b, pos + 1)
+        if not ln:
+            return None
+        pos += 1 + ln
+        xyz = None
+        if up:
+            if pos + 12 > len(b):
+                return None
+            xyz = struct.unpack_from("<3f", b, pos)
+            pos += 12
+        # Then the time, sometimes after a byte or so more (unknown): where an ms timestamp fits.
+        for k in range(5):
+            if pos + k + 8 <= len(b) and _plausible_ms(b, pos + k):
+                pos += k
+                break
+        else:
+            return None
+        out.append(FieldBoss(bid, up, int.from_bytes(b[pos : pos + 8], "little"), xyz))
+        pos += 8
+    return FieldBosses(world, out)
+
+
+def _plausible_ms(b: bytes, pos: int) -> bool:
+    """A u64 at `pos` that reads as a time in ms since 1970, in this game's lifetime."""
+    return 1_600_000_000_000 < int.from_bytes(b[pos : pos + 8], "little") < 2_200_000_000_000
+
+
 OP_SHOP = (0x91, 0x56)  # the Black Cloud Merchant's stock for one tab, sent when the tab is opened
 SHOP_RECORD = 34
 

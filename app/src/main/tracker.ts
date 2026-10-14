@@ -19,6 +19,9 @@ import { dirname, join, resolve } from 'node:path'
 import { DISPLAY_NAME } from '../shared/app.ts'
 import { broadcast } from './broadcast.ts'
 import { settings } from './settings.ts'
+import { kinaBalance, kinaRebase, NO_KINA, type KinaSession } from '../shared/kina.ts'
+import { fieldBosses } from './fieldBosses.ts'
+import type { FieldBosses } from '../shared/timers.ts'
 import { GAME_ACTIVE_S, NO_NEARBY, type Nearby, type Pet, type ShopItem, type ShopStock, type SoulToast, type TrackerStatus } from '../shared/tracker.ts'
 
 const RESTART_DELAYS_MS = [1000, 3000, 10000, 30000]
@@ -39,6 +42,12 @@ const currentShop = (): ShopStock[] => {
   for (const [tab, s] of shopTabs) if (s.nextAt !== null && s.nextAt <= now) shopTabs.delete(tab)
   return [...shopTabs.values()]
 }
+/** Kina earned since the app started (or the last reset). */
+let kina: KinaSession = NO_KINA
+function setKina(next: KinaSession): void {
+  kina = next
+  broadcast('tracker:kina', kina)
+}
 const soulListeners = new Set<(toast: SoulToast) => void>()
 const statusListeners = new Set<(status: TrackerStatus) => void>()
 const shopListeners = new Set<(stock: ShopStock[]) => void>()
@@ -51,6 +60,7 @@ let status: TrackerStatus = {
   replay: false,
   synced: null,
   dataFile: null,
+  character: null,
 }
 
 /**
@@ -212,7 +222,18 @@ function handleLine(line: string): void {
     case 'ready':
       restarts = 0
       replacePets(ev['pets'] as Pet[])
+      setStatus({ character: (ev['character'] as { name: string } | null)?.name ?? null })
+      fieldBosses.setServer((ev['character'] as { server?: number } | null)?.server ?? null)
       break
+    case 'character': {
+      // Another character entered the world: its own collection (pet levels are per character).
+      const name = ev['name'] as string
+      log(`character: ${name}${ev['server'] ? ` (server ${ev['server']})` : ''}${ev['switched'] ? ', switched collection' : ''}`)
+      replacePets(ev['pets'] as Pet[])
+      setStatus({ character: name })
+      fieldBosses.setServer((ev['server'] as number | undefined) ?? null)
+      break
+    }
     case 'status': {
       const state = ev['state'] as TrackerStatus['state']
       const detail = state === 'locked' ? `Game server ${ev['server']}` : ((ev['detail'] as string | undefined) ?? null)
@@ -225,6 +246,8 @@ function handleLine(line: string): void {
       break
     case 'sync': {
       log(`login sync: ${ev['pets']} pets, ${ev['souls']} souls`)
+      // Entering the world, maybe as another character: its Kina is a new starting point.
+      setKina(kinaRebase(kina))
       replacePets(ev['collection'] as Pet[])
       setStatus({ synced: { at: Date.now(), pets: ev['pets'] as number, souls: ev['souls'] as number } })
       break
@@ -266,6 +289,12 @@ function handleLine(line: string): void {
     }
     case 'combat':
       broadcast('tracker:combat', Date.now())
+      break
+    case 'fieldBosses':
+      fieldBosses.fromMap(ev['world'] as number, ev['bosses'] as { id: number; up: boolean; at: number }[])
+      break
+    case 'kina':
+      setKina(kinaBalance(kina, ev['balance'] as number, Date.now()))
       break
     case 'shop': {
       const stock: ShopStock = {
@@ -326,6 +355,14 @@ export const tracker = {
   pets: (): Pet[] => [...pets.values()],
   nearby: (): Nearby => nearby,
   shop: (): ShopStock[] => currentShop(),
+  kina: (): KinaSession => kina,
+  fieldBosses: (): FieldBosses => fieldBosses.all(),
+  /** Start the session again: the souls (the helper answers with every pet) and the Kina. */
+  resetSession(): void {
+    log('session reset')
+    command({ cmd: 'resetSession' })
+    setKina({ ...NO_KINA, balance: kina.balance, gains: [] })
+  },
   setSouls: (pet: number, souls: number): void => command({ cmd: 'set', pet, souls }),
   setName: (pet: number, name: string): void => command({ cmd: 'name', pet, name }),
   onSoul(fn: (toast: SoulToast) => void): () => void {

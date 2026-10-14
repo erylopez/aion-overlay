@@ -55,6 +55,8 @@ const restockIn = computed(() => {
 
 const drag = windowDrag({ move: 'merchant:moveTo', end: 'merchant:dragEnd' })
 const close = (): void => void bridge().invoke('merchant:close')
+/** Where the pet's soul monsters spawn: the panel's map of it, as the collection shows it. */
+const showPet = (id: number): void => void bridge().invoke('panel:showPet', id)
 
 /** Tell main how big the window is; nothing worth buying measures 0, and main keeps it hidden. */
 let sent = ''
@@ -110,7 +112,12 @@ onBeforeUnmount(() => {
           <li
             v-for="o in offers"
             :key="o.pet"
-            :class="['flex items-center gap-2 rounded-md border-l-2 px-1.5 py-1', hard(o.pet) ? 'border-yellow bg-yellow/5' : 'border-transparent']"
+            :class="[
+              'flex cursor-pointer items-center gap-2 rounded-md border-l-2 px-1.5 py-1 transition hover:bg-dark',
+              hard(o.pet) ? 'border-yellow bg-yellow/5' : 'border-transparent',
+            ]"
+            title="Show where its soul monsters spawn"
+            @click="showPet(o.pet)"
           >
             <PetIcon :id="o.pet" :size="28" />
             <div class="min-w-0 flex-1">
@@ -136,8 +143,8 @@ onBeforeUnmount(() => {
         </ul>
 
         <p class="border-t border-card px-3 py-1.5 text-[10px] text-darkest">
-          Marked: none of its soul monsters spawn on your side ({{ SHORT[side] }}), or none are known
-          (bosses, events). Your side is in Settings → You.
+          Click a pet for where its soul monsters spawn. Marked: none spawn on your side
+          ({{ SHORT[side] }}), or none are known (bosses, events). Your side is in Settings → You.
         </p>
       </div>
     </div>

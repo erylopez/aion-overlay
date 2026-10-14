@@ -1,6 +1,6 @@
 /**
  * App updates, the way marnis-app does them: electron-updater against a static feed on the same
- * host (`https://marnis.app/updates/aion2/`, set in electron-builder.yml and baked into the build
+ * host (`https://nyerk.app/updates/`, set in electron-builder.yml and baked into the build
  * as app-update.yml).
  *
  * Prompted, never silent: no automatic download and no install on quit. A check runs 30 s after
@@ -11,6 +11,7 @@ import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { broadcast } from './broadcast.ts'
 import { settings } from './settings.ts'
+import { machineHash } from './machine.ts'
 import { log } from './tracker.ts'
 import { markQuitting } from './windows.ts'
 import { initialUpdateStatus, type UpdateStatus } from '../shared/update.ts'
@@ -34,6 +35,8 @@ function wire(): void {
   autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.allowPrerelease = false
   autoUpdater.allowDowngrade = false
+  // The server's gate (aion2-api) keys its ban list on this: see machine.ts.
+  autoUpdater.requestHeaders = { 'X-A2-Machine': machineHash() }
   // Without a logger the library writes to a console nobody sees in an installed build.
   autoUpdater.logger = {
     info: (m: unknown) => log(`update: ${String(m)}`),

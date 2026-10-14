@@ -3,6 +3,8 @@
  * file or a renderer bug can never store something the app then trips over.
  */
 
+import { defaultShown, leadChoices, REGIONS, TIMERS, type Region, type TimerId } from './timers.ts'
+
 export interface Point {
   x: number
   y: number
@@ -41,6 +43,8 @@ export interface Settings {
     idleHideSeconds: number
     /** Pop up the Black Cloud Merchant's pets worth buying when one of its tabs is opened. */
     merchant: boolean
+    /** This session's Kina per hour, at the top right. */
+    kina: boolean
   }
 
   /** Where the Black Cloud Merchant window sits (top-left, screen DIPs); null = top centre. */
@@ -56,6 +60,23 @@ export interface Settings {
 
   /** Look for a new version 30 s after start and every 6 hours (installed builds only). */
   autoUpdateCheck: boolean
+
+  /** The Timers tab: which events alert, and how (a chime; the bubble shaking). */
+  timers: {
+    /** The server region: weekly events are at its own local time. */
+    region: Region
+    enabled: Record<TimerId, boolean>
+    /** Minutes before each start to alert. */
+    lead: Record<TimerId, number>
+    sound: boolean
+    /** 0..1 */
+    volume: number
+    shake: boolean
+    /** Share field boss timers: send what your map shows, get what other players' maps show. */
+    share: boolean
+    /** Listed in the Timers tab; only these alert. */
+    shown: Record<TimerId, boolean>
+  }
 
   /** Leave pets at the cap (Lv3: no more souls) out of the collection, Nearby and the HUD. */
   hideMaxed: boolean
@@ -94,6 +115,7 @@ export const SETTINGS_DEFAULTS: Settings = {
     hideWithoutGame: true,
     idleHideSeconds: 45,
     merchant: true,
+    kina: true,
   },
   merchantWindow: null,
   hideFromCapture: false,
@@ -101,6 +123,16 @@ export const SETTINGS_DEFAULTS: Settings = {
   playerLevel: null,
   autoUpdateCheck: true,
   hideMaxed: true,
+  timers: {
+    region: 'na-east',
+    enabled: Object.fromEntries(TIMERS.map((t) => [t.id, t.defaultOn])) as Record<TimerId, boolean>,
+    lead: Object.fromEntries(TIMERS.map((t) => [t.id, t.lead])) as Record<TimerId, number>,
+    sound: true,
+    volume: 0.5,
+    shake: true,
+    share: true,
+    shown: Object.fromEntries(TIMERS.map((t) => [t.id, defaultShown(t)])) as Record<TimerId, boolean>,
+  },
   sleepWithoutGame: true,
   tracker: { python: '', dataFile: '' },
 }
@@ -151,6 +183,27 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
         hideWithoutGame: bool(v.hideWithoutGame, d.hud.hideWithoutGame),
         idleHideSeconds: Math.round(num(v.idleHideSeconds, 0, 600, d.hud.idleHideSeconds)),
         merchant: bool(v.merchant, d.hud.merchant),
+        kina: bool(v.kina, d.hud.kina),
+      } as Settings[K]
+    }
+    case 'timers': {
+      const v = (value ?? {}) as Partial<Settings['timers']>
+      const on = (v.enabled ?? {}) as Partial<Record<TimerId, unknown>>
+      const lead = (v.lead ?? {}) as Partial<Record<TimerId, unknown>>
+      return {
+        region: REGIONS.some((r) => r.id === v.region) ? v.region : d.timers.region,
+        enabled: Object.fromEntries(TIMERS.map((t) => [t.id, bool(on[t.id], t.defaultOn)])) as Record<TimerId, boolean>,
+        // One of the leads offered for that timer; anything else falls back to its default.
+        lead: Object.fromEntries(
+          TIMERS.map((t) => [t.id, leadChoices(t).includes(lead[t.id] as number) ? (lead[t.id] as number) : t.lead]),
+        ) as Record<TimerId, number>,
+        sound: bool(v.sound, d.timers.sound),
+        volume: num(v.volume, 0, 1, d.timers.volume),
+        shake: bool(v.shake, d.timers.shake),
+        share: bool(v.share, d.timers.share),
+        shown: Object.fromEntries(
+          TIMERS.map((t) => [t.id, bool((v.shown as Partial<Record<TimerId, unknown>> | undefined)?.[t.id], defaultShown(t))]),
+        ) as Record<TimerId, boolean>,
       } as Settings[K]
     }
     case 'faction':

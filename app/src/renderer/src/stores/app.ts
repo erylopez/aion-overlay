@@ -6,6 +6,8 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, toRaw } from 'vue'
 import { SETTINGS_DEFAULTS, type SettingKey, type Settings } from '@shared/settings.ts'
 import { MAX_LEVEL, NO_NEARBY, type Nearby, type Pet, type ShopStock, type SoulToast, type TrackerStatus } from '@shared/tracker.ts'
+import { kinaPerHour, kinaSeries, NO_KINA, type KinaSession } from '@shared/kina.ts'
+import type { FieldBosses, TimerAlert, TimerId } from '@shared/timers.ts'
 import { initialUpdateStatus, type UpdateStatus } from '@shared/update.ts'
 import { bridge } from '@/lib/bridge.ts'
 import type { Genus } from '@/lib/petDb.ts'
@@ -22,9 +24,22 @@ export const useApp = defineStore('app', () => {
   const panelVisible = ref(false)
   const ready = ref(false)
   const nearby = ref<Nearby>(NO_NEARBY)
+  /** The timers alerting now (the bubble shakes while there are any). */
+  const alerting = ref<TimerAlert[]>([])
+  /** The field bosses as the map last listed them (the Gartua timer). */
+  const fieldBosses = ref<FieldBosses>({})
+  /** Timers to scroll to and highlight in the Timers tab (the bubble was clicked on their alert). */
+  const timerFocus = ref<{ ids: TimerId[]; at: number } | null>(null)
   /** The Black Cloud Merchant's stock: the tabs opened, until their restock. */
   const shop = ref<ShopStock[]>([])
   const update = ref<UpdateStatus>(initialUpdateStatus(''))
+  /** This session's Kina; the rate is redrawn every few seconds as active time runs on. */
+  const kina = ref<KinaSession>(NO_KINA)
+  const now = ref(Date.now())
+  setInterval(() => (now.value = Date.now()), 5000)
+  const kinaRate = computed(() => kinaPerHour(kina.value, now.value))
+  /** Kina per hour over time, for the sparklines. */
+  const kinaTimeline = computed(() => kinaSeries(kina.value, now.value))
   /**
    * The collection's search, sort and filter pills. Kept here, not in the tab: the tab is rebuilt
    * after a pet's map closes, and the filters used to reset with it.
@@ -104,6 +119,12 @@ export const useApp = defineStore('app', () => {
     })
     api.on('tracker:nearby', (n) => (nearby.value = n))
     api.on('tracker:shop', (s) => (shop.value = s))
+    api.on('tracker:fieldBosses', (b) => (fieldBosses.value = b))
+    api.on('tracker:kina', (k) => {
+      kina.value = k
+      now.value = Date.now()
+    })
+    api.on('timers:alerting', (a) => (alerting.value = a))
     api.on('update:status', (u) => (update.value = u))
     api.on('hud:editing', (e) => (hudEditing.value = e))
     api.on('panel:visible', (v) => (panelVisible.value = v))
@@ -113,6 +134,9 @@ export const useApp = defineStore('app', () => {
     petMap.value = new Map(t.pets.map((p) => [p.id, p]))
     nearby.value = t.nearby
     shop.value = t.shop
+    kina.value = t.kina
+    fieldBosses.value = t.fieldBosses
+    alerting.value = await api.invoke('timers:get')
     update.value = await api.invoke('update:get')
     ready.value = true
   }
@@ -146,7 +170,7 @@ export const useApp = defineStore('app', () => {
   }
 
   return {
-    settings, status, pets, toasts, fighting, collectionView, shop, hudEditing, panelVisible, ready, sessionSouls, recentPets, openPetId, nearby, update,
+    settings, status, pets, toasts, fighting, collectionView, shop, kina, kinaRate, kinaTimeline, alerting, timerFocus, fieldBosses, hudEditing, panelVisible, ready, sessionSouls, recentPets, openPetId, nearby, update,
     init, set, setHud, togglePin, openPet, hiddenPet,
   }
 })
