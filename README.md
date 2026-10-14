@@ -1,6 +1,6 @@
 # Nyerk
 
-*Formerly Aion2 Pet Tracker.* A Windows overlay that counts your Aion 2 **Pet Collection** souls as they drop, so you don't have
+A Windows overlay that counts your Aion 2 Pet Collection souls as they drop, so you don't have
 to keep opening the Pets menu.
 
 - **Live counts:** every soul is counted the moment it drops, with level-ups (5 → 25 → 75) and the
@@ -20,6 +20,8 @@ to keep opening the Pets menu.
 - **One collection per character:** switching to an alt shows that character's pets.
 - **Stays out of the way:** it sits in the tray and sleeps while Aion 2 is closed, waking when the
   game starts.
+- And whatever else I randomly find useful while I play Aion2. :D
+
 
 ![The collection panel and the in-game HUD](assets/screenshot.webp)
 
