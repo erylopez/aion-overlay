@@ -67,11 +67,13 @@ const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6]
 const hm = (h: number, m = 0): number => h * 60 + m
 
 /** The global servers' regions, and the time zone each one's "server time" is. */
-export type Region = 'na-east' | 'na-west' | 'europe'
+export type Region = 'na-east' | 'na-west' | 'europe' | 'south-america'
 export const REGIONS: { id: Region; label: string; zone: string; confirmed: boolean }[] = [
   { id: 'na-east', label: 'NA East', zone: 'America/New_York', confirmed: true },
   { id: 'na-west', label: 'NA West', zone: 'America/Los_Angeles', confirmed: false },
   { id: 'europe', label: 'Europe', zone: 'Europe/Berlin', confirmed: false },
+  // São Paulo time (UTC-3, no daylight saving) is assumed for the South American servers.
+  { id: 'south-america', label: 'South America', zone: 'America/Sao_Paulo', confirmed: false },
 ]
 const zoneOf = (region: Region): string => REGIONS.find((r) => r.id === region)?.zone ?? 'America/New_York'
 

@@ -3,6 +3,11 @@
 The game flow is found the way the DPS meters find it: the server port whose payloads keep
 carrying the stream's record terminator. A per-flow sequence check drops retransmissions.
 
+The lock follows the game: when the locked flow goes quiet and another flow carries the game's
+terminator, the game has moved to that connection (character select into the world, a reconnect,
+another server) and the stream locks onto it instead. Flows that are not the game are held a
+while, so the one locked onto later keeps what it sent first (a login's collection data).
+
 Live capture listens on every adapter that has an address at once: with a VPN or a ping reducer
 the game's traffic is only readable on the tunnel adapter, which is not Windows' default one.
 """
@@ -19,8 +24,21 @@ from . import protocol
 
 LOCK_HITS = 12  # signature-bearing packets ...
 LOCK_WINDOW_S = 3.0  # ... within this long, from one flow, lock onto it
-HOLD_LIMIT = 4 * 1024 * 1024  # bytes kept per flow while waiting for the lock
-REPORT_S = 30.0  # until the lock, how often the log says what each adapter is seeing
+# The locked flow carries its terminator ~19x/s even idle: silent this long while another flow
+# looks like the game, the game has moved there.
+RELOCK_SILENCE_S = 5.0
+HOLD_LIMIT = 4 * 1024 * 1024  # bytes kept per flow that is not (yet) the game
+HOLD_IDLE_S = 30.0  # a held flow that sent nothing for this long is dropped
+PRUNE_EVERY_S = 10.0
+# A missing segment not filled within this long never will be: TCP resends what the network lost
+# well within it, and what the capture missed (the game did receive it) is never resent. Waiting on
+# bytes alone stalled a quiet stream (~0.4 KB/s idle) for minutes.
+GAP_WAIT_S = 2.0
+GAP_WAIT_BYTES = 65536
+REPORT_S = 30.0  # while there is no game stream, how often the log says what each adapter sees
+QUIET_S = 15.0  # the locked flow silent this long counts as no game stream, for the reports
+
+FlowKey = tuple[str, int, str, int]
 
 
 class Reassembler:
@@ -30,16 +48,19 @@ class Reassembler:
         self.buf = b""
         self.next_seq: int | None = None
         self.pending: dict[int, bytes] = {}
+        self.gap_since: float | None = None  # capture time the current gap opened
 
-    def feed(self, seq: int, data: bytes) -> list[bytes]:
+    def feed(self, ts: float, seq: int, data: bytes) -> list[bytes]:
         if self.next_seq is None:
             self.next_seq = seq
         delta = (seq - self.next_seq) & 0xFFFFFFFF
         if delta == 0:
             self._append(data)
-        elif delta < 0x80000000:  # ahead: hold until the gap fills (or give up past 64 KB)
+        elif delta < 0x80000000:  # ahead: hold until the gap fills, or give up on it
             self.pending[seq] = data
-            if sum(map(len, self.pending.values())) <= 65536:
+            if self.gap_since is None:
+                self.gap_since = ts
+            if sum(map(len, self.pending.values())) <= GAP_WAIT_BYTES and ts - self.gap_since < GAP_WAIT_S:
                 return []
             self._resync()
         else:  # behind: a retransmission, keep only bytes we have not seen
@@ -51,6 +72,7 @@ class Reassembler:
         # draining on an exact arrival stalled the stream for good after a resync, whose first
         # held segment had already arrived.)
         self._drain()
+        self.gap_since = ts if self.pending else None
         packets, consumed = protocol.split(self.buf)
         self.buf = self.buf[consumed:]
         if len(self.buf) > 2 * 1024 * 1024:
@@ -89,39 +111,59 @@ class GameStream:
         self.on_packet = on_packet
         self.port = server_port
         self.on_lock = on_lock or (lambda host, port: print(f"[capture] game stream locked: server {host}:{port}"))
-        self.flows: dict[tuple[str, int, str, int], Reassembler] = {}
+        self.flows: dict[FlowKey, Reassembler] = {}
         self.hits: dict[tuple[str, int], list[float]] = {}
-        # Until a flow is known to be the game, its segments are held here, so that what it sent
-        # before the lock (a login's character and collection data) is not lost.
-        self.held: dict[tuple[str, int, str, int], list[tuple]] = {}
-        self.held_bytes: dict[tuple[str, int, str, int], int] = {}
+        # Flows not (yet) known to be the game: their segments, so that what one sent before it is
+        # locked onto (a login's character and collection data) is not lost.
+        self.held: dict[FlowKey, list[tuple]] = {}
+        self.held_bytes: dict[FlowKey, int] = {}
+        self.held_last: dict[FlowKey, float] = {}
+        self.last_game: float | None = None  # capture time of the locked flow's last segment
+        self.pruned_at = 0.0
+        # Terminator-bearing segments per flow other than the locked one, since the last report.
+        self.candidates: dict[tuple[str, int], int] = {}
+
+    def silent_for(self, now: float) -> float | None:
+        """Seconds since the locked flow last sent anything; None before the first lock."""
+        return None if self.last_game is None else now - self.last_game
 
     def segment(self, ts: float, src: str, sport: int, dst: str, dport: int, seq: int, data: bytes) -> None:
         if not data:
             return
         key = (src, sport, dst, dport)
-        if self.port is None:
-            self._hold(key, (ts, seq, data))
-            if not any(sig in data for sig in protocol.GAME_SIGNATURES):
-                return
-            times = [t for t in self.hits.get((src, sport), []) if ts - t <= LOCK_WINDOW_S] + [ts]
-            self.hits[(src, sport)] = times
-            if len(times) < LOCK_HITS:
-                return
-            self.port = sport
-            self.on_lock(src, sport)
-            held = {k: v for k, v in self.held.items() if k[1] == sport}
-            self.held.clear()
-            self.held_bytes.clear()
-            for k, segs in held.items():
-                for t, s, d in segs:
-                    self._feed(k, t, s, d)
-            return  # this segment was the last one held
-        if sport != self.port:
+        if self.port is not None and sport == self.port:
+            self.last_game = ts
+            self._feed(key, ts, seq, data)
             return
-        self._feed(key, ts, seq, data)
+        self._hold(key, (ts, seq, data))
+        self._prune(ts)
+        if not any(sig in data for sig in protocol.GAME_SIGNATURES):
+            return
+        self.candidates[(src, sport)] = self.candidates.get((src, sport), 0) + 1
+        times = [t for t in self.hits.get((src, sport), []) if ts - t <= LOCK_WINDOW_S] + [ts]
+        self.hits[(src, sport)] = times
+        if len(times) < LOCK_HITS:
+            return
+        if self.last_game is not None and ts - self.last_game < RELOCK_SILENCE_S:
+            return  # the locked flow is alive: this one is something else
+        self._lock(ts, src, sport)
 
-    def _hold(self, key, seg) -> None:
+    def _lock(self, ts: float, src: str, sport: int) -> None:
+        self.port = sport
+        self.last_game = ts
+        self.on_lock(src, sport)
+        # A new lock is a new connection: the old flows' streams are done with.
+        self.flows = {k: f for k, f in self.flows.items() if k[1] == sport}
+        held = {k: v for k, v in self.held.items() if k[1] == sport}
+        for k in held:
+            self._unhold(k)
+        for k, segs in held.items():
+            for t, s, d in segs:
+                self._feed(k, t, s, d)
+        # (The segment that made the lock was the last one held.)
+
+    def _hold(self, key: FlowKey, seg: tuple) -> None:
+        self.held_last[key] = seg[0]
         if key not in self.held:
             if seg[2][:3] in (b"\x17\x03\x03", b"\x16\x03\x01", b"\x16\x03\x03"):
                 self.held_bytes[key] = HOLD_LIMIT  # TLS: never the game, never held
@@ -131,9 +173,24 @@ class GameStream:
         self.held[key].append(seg)
         self.held_bytes[key] = self.held_bytes.get(key, 0) + len(seg[2])
 
-    def _feed(self, key, ts: float, seq: int, data: bytes) -> None:
+    def _unhold(self, key: FlowKey) -> None:
+        self.held.pop(key, None)
+        self.held_bytes.pop(key, None)
+        self.held_last.pop(key, None)
+
+    def _prune(self, ts: float) -> None:
+        """Forget flows that went quiet: holding stays bounded however long the capture runs."""
+        if ts - self.pruned_at < PRUNE_EVERY_S:
+            return
+        self.pruned_at = ts
+        for k in [k for k, t in self.held_last.items() if ts - t > HOLD_IDLE_S]:
+            self._unhold(k)
+        for k in [k for k, t in self.hits.items() if ts - t[-1] > LOCK_WINDOW_S]:
+            del self.hits[k]
+
+    def _feed(self, key: FlowKey, ts: float, seq: int, data: bytes) -> None:
         flow = self.flows.setdefault(key, Reassembler())
-        for pkt in flow.feed(seq, data):
+        for pkt in flow.feed(ts, seq, data):
             self.on_packet(ts, pkt)
 
 
@@ -207,16 +264,28 @@ def live(stream: GameStream, iface: str | None = None, save_to: str | None = Non
             writer.write(p)
         counts[p.sniffed_on] += 1
         for seg in _segments([p]):
-            locked = stream.port is not None
+            before = stream.port
             stream.segment(*seg)
-            if not locked and stream.port is not None:
-                log(f"[capture] the game stream is on {p.sniffed_on}")
+            if stream.port != before:
+                was = f" (was port {before})" if before is not None else ""
+                log(f"[capture] game stream locked on {p.sniffed_on}: server {seg[1]}:{stream.port}{was}")
 
-    def report() -> None:
+    def quiet_for() -> float | None:
+        """Seconds the game stream has been missing: never locked, or the locked flow silent."""
+        if stream.port is None:
+            return time.monotonic() - started
+        silent = stream.silent_for(time.time())
+        return silent if silent is not None and silent >= QUIET_S else None
+
+    def report(quiet: float) -> None:
         seen = ", ".join(f"{name} {n}" for name, n in counts.items())
-        log(f"[capture] no game stream yet; TCP packets in the last {REPORT_S:.0f}s: {seen}")
+        what = "no game stream yet" if stream.port is None else f"the game stream (port {stream.port}) silent for {quiet:.0f}s"
+        top = sorted(dict(stream.candidates).items(), key=lambda kv: -kv[1])[:5]  # a copy: the sniffer thread adds to it
+        flows = ", ".join(f"{h}:{port} {n}" for (h, port), n in top) or "none"
+        log(f"[capture] {what}; TCP packets in the last {REPORT_S:.0f}s: {seen}; flows carrying the game's terminator: {flows}")
         for name in counts:
             counts[name] = 0
+        stream.candidates.clear()
 
     halt = stop or threading.Event()
     sniffer = AsyncSniffer(opened_socket=sockets, prn=handle, store=False)
@@ -228,8 +297,13 @@ def live(stream: GameStream, iface: str | None = None, save_to: str | None = Non
         while not halt.wait(1.0):
             if not sniffer.thread.is_alive():
                 raise RuntimeError(f"capture ended on its own: {sniffer.exception or 'every adapter failed'}")
-            if stream.port is None and time.monotonic() >= next_report:
-                report()
+            if time.monotonic() >= next_report:
+                if (quiet := quiet_for()) is not None:
+                    report(quiet)
+                else:
+                    for name in counts:
+                        counts[name] = 0
+                    stream.candidates.clear()
                 next_report += REPORT_S
     except KeyboardInterrupt:
         pass
