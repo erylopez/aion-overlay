@@ -7,7 +7,6 @@ import type { KinaSession } from './kina.ts'
 import type { Point, SettingKey, Settings } from './settings.ts'
 import type { FieldBosses, TimerAlert, TimerId } from './timers.ts'
 import type { Nearby, Pet, ShopStock, SoulToast, TrackerStatus } from './tracker.ts'
-import type { UpdateStatus } from './update.ts'
 
 /** Renderer → main, request/response. */
 export interface InvokeChannels {
@@ -24,11 +23,6 @@ export interface InvokeChannels {
   'tracker:restart': { args: []; result: void }
   /** Start the session again: its souls and its Kina. */
   'tracker:resetSession': { args: []; result: void }
-
-  'update:get': { args: []; result: UpdateStatus }
-  'update:check': { args: []; result: void }
-  'update:download': { args: []; result: void }
-  'update:install': { args: []; result: void }
 
   'bubble:moveTo': { args: [to: Point]; result: void }
   'bubble:dragEnd': { args: []; result: void }
@@ -79,7 +73,6 @@ export interface EventChannels {
   'panel:showTimers': TimerId[]
   'hud:editing': boolean
   'panel:visible': boolean
-  'update:status': UpdateStatus
 }
 
 export type InvokeChannel = keyof InvokeChannels
@@ -98,12 +91,11 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'app:info', 'app:quit', 'app:openPath',
   'settings:all', 'settings:set',
   'tracker:get', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession',
-  'update:get', 'update:check', 'update:download', 'update:install',
   'bubble:moveTo', 'bubble:dragEnd', 'panel:toggle', 'panel:hide', 'panel:setExpanded',
   'hud:setEditing', 'hud:moveTo', 'hud:dragEnd', 'hud:resize',
   'merchant:moveTo', 'merchant:dragEnd', 'merchant:resize', 'merchant:close', 'panel:showPet', 'timers:get', 'timers:dismiss', 'timers:open',
 ]
 
 export const EVENT_CHANNELS: readonly EventChannel[] = [
-  'settings:changed', 'tracker:status', 'tracker:pets', 'tracker:pet', 'tracker:soul', 'tracker:nearby', 'tracker:combat', 'tracker:shop', 'tracker:kina', 'tracker:fieldBosses', 'panel:showPet', 'panel:showTimers', 'timers:alert', 'timers:alerting', 'hud:editing', 'panel:visible', 'update:status',
+  'settings:changed', 'tracker:status', 'tracker:pets', 'tracker:pet', 'tracker:soul', 'tracker:nearby', 'tracker:combat', 'tracker:shop', 'tracker:kina', 'tracker:fieldBosses', 'panel:showPet', 'panel:showTimers', 'timers:alert', 'timers:alerting', 'hud:editing', 'panel:visible',
 ]

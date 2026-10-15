@@ -3,7 +3,6 @@ import { app, ipcMain, shell } from 'electron'
 import { settings } from './settings.ts'
 import { timers } from './timers.ts'
 import { logPath, tracker } from './tracker.ts'
-import { updates } from './update.ts'
 import {
   bubbleDragEnded,
   closeMerchant,
@@ -63,11 +62,6 @@ export function registerIpc(): void {
   })
   handle('tracker:restart', () => tracker.restart())
   handle('tracker:resetSession', () => tracker.resetSession())
-
-  handle('update:get', () => updates.status())
-  handle('update:check', () => updates.check())
-  handle('update:download', () => updates.download())
-  handle('update:install', () => updates.install())
 
   handle('bubble:moveTo', (to) => {
     if (isPoint(to)) moveBubble(to)

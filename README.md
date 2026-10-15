@@ -1,5 +1,10 @@
 # Nyerk
 
+> **Private offline build** of [xCROv/aion2-nyerk](https://github.com/xCROv/aion2-nyerk). This copy
+> makes no network connections: the auto-updater, the machine id and the shared field boss
+> timers are removed, and the app cancels any http(s)/websocket request its windows make. Build it
+> from source (below); do not install the upstream release over it.
+
 A Windows overlay that counts your Aion 2 Pet Collection souls as they drop, so you don't have
 to keep opening the Pets menu.
 
@@ -14,7 +19,7 @@ to keep opening the Pets menu.
 - **Kina per hour:** this session's Kina rate with a timeline, in the panel and on the HUD.
 - **Timers:** the game's events (Shugo Festival, the Black Cloud Merchant, rifts, the siege…) and
   Verteron's field bosses, read from the map's field boss list, with optional alerts. Field boss
-  times are shared between players so they stay right when you have not opened the map.
+  times come only from your own map.
 - **Black Cloud Merchant:** when you open one of its tabs, a window lists the pets it sells that
   you have not maxed, with where their soul monsters spawn.
 - **One collection per character:** switching to an alt shows that character's pets.
@@ -31,22 +36,19 @@ The tracker **only listens** and functions the exact same as popular DPS Meters 
 [Npcap](https://npcap.com). It never sends anything to the game
 or its servers, never reads or changes the game's memory, and sends no input.
 
-The app talks only to **nyerk.app**: to check for updates, and (unless you switch off "Share
-field boss timers") to send the field boss times your map shows and get other players' back. That
-carries your game server's id and an anonymous hash of your PC, never your character's name or
-position.
+This build talks to nothing: no update checks, no shared timers, no machine id. Everything it reads
+stays on your PC (`%APPDATA%\Nyerk`). Links you click (questlog.gg) open in your browser.
 
 ## Install
 
 1. Install [Npcap](https://npcap.com) (the default options are fine).
-2. Download `Nyerk-Setup-<version>.exe` from the
-   [latest release](../../releases/latest) and run it. It installs for your Windows account only.
-   The installer is not code-signed, so Windows may show "Windows protected your PC": choose
-   **More info → Run anyway**.
+2. Build `Nyerk-Setup-<version>.exe` from source (below) and run it. It installs for your Windows
+   account only. The installer is not code-signed, so Windows may show "Windows protected your
+   PC": choose **More info → Run anyway**.
 3. Start the tracker **before you log in** to your character, so it picks up your collection.
 
-The overlay draws over **borderless or windowed** mode, not exclusive fullscreen. The app checks
-for updates by itself and asks before installing one.
+The overlay draws over **borderless or windowed** mode, not exclusive fullscreen. There are no
+automatic updates: to update, pull the new upstream version, review it, and rebuild.
 
 ## Build from source
 

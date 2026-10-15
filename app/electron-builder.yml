@@ -31,9 +31,3 @@ nsis:
   deleteAppDataOnUninstall: false
   shortcutName: Nyerk
   artifactName: Nyerk-Setup-${version}.${ext}
-# The update feed. electron-builder bakes this into the build as app-update.yml; `npm run dist`
-# publishes nothing itself (--publish never).
-publish:
-  provider: generic
-  url: https://nyerk.app/updates/
-  channel: latest

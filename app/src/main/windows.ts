@@ -81,6 +81,8 @@ function overlayWindow(options: Electron.BrowserWindowConstructorOptions): Brows
       backgroundThrottling: false,
       // The timers' chime plays without a click first (Chromium's default wants one).
       autoplayPolicy: 'no-user-gesture-required',
+      // Chromium's spellchecker can download dictionaries; nothing here needs it.
+      spellcheck: false,
     },
     ...options,
   })

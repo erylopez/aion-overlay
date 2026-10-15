@@ -8,7 +8,6 @@ import { SETTINGS_DEFAULTS, type SettingKey, type Settings } from '@shared/setti
 import { MAX_LEVEL, NO_NEARBY, type Nearby, type Pet, type ShopStock, type SoulToast, type TrackerStatus } from '@shared/tracker.ts'
 import { kinaPerHour, kinaSeries, NO_KINA, type KinaSession } from '@shared/kina.ts'
 import type { FieldBosses, TimerAlert, TimerId } from '@shared/timers.ts'
-import { initialUpdateStatus, type UpdateStatus } from '@shared/update.ts'
 import { bridge } from '@/lib/bridge.ts'
 import type { Genus } from '@/lib/petDb.ts'
 import type { Continent } from '@/lib/spawns.ts'
@@ -32,7 +31,6 @@ export const useApp = defineStore('app', () => {
   const timerFocus = ref<{ ids: TimerId[]; at: number } | null>(null)
   /** The Black Cloud Merchant's stock: the tabs opened, until their restock. */
   const shop = ref<ShopStock[]>([])
-  const update = ref<UpdateStatus>(initialUpdateStatus(''))
   /** This session's Kina; the rate is redrawn every few seconds as active time runs on. */
   const kina = ref<KinaSession>(NO_KINA)
   const now = ref(Date.now())
@@ -125,7 +123,6 @@ export const useApp = defineStore('app', () => {
       now.value = Date.now()
     })
     api.on('timers:alerting', (a) => (alerting.value = a))
-    api.on('update:status', (u) => (update.value = u))
     api.on('hud:editing', (e) => (hudEditing.value = e))
     api.on('panel:visible', (v) => (panelVisible.value = v))
     const [s, t] = await Promise.all([api.invoke('settings:all'), api.invoke('tracker:get')])
@@ -137,7 +134,6 @@ export const useApp = defineStore('app', () => {
     kina.value = t.kina
     fieldBosses.value = t.fieldBosses
     alerting.value = await api.invoke('timers:get')
-    update.value = await api.invoke('update:get')
     ready.value = true
   }
 
@@ -170,7 +166,7 @@ export const useApp = defineStore('app', () => {
   }
 
   return {
-    settings, status, pets, toasts, fighting, collectionView, shop, kina, kinaRate, kinaTimeline, alerting, timerFocus, fieldBosses, hudEditing, panelVisible, ready, sessionSouls, recentPets, openPetId, nearby, update,
+    settings, status, pets, toasts, fighting, collectionView, shop, kina, kinaRate, kinaTimeline, alerting, timerFocus, fieldBosses, hudEditing, panelVisible, ready, sessionSouls, recentPets, openPetId, nearby,
     init, set, setHud, togglePin, openPet, hiddenPet,
   }
 })

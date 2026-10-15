@@ -58,9 +58,6 @@ export interface Settings {
   /** Your level, to point out monsters close enough to it for souls to drop well; null = unset. */
   playerLevel: number | null
 
-  /** Look for a new version 30 s after start and every 6 hours (installed builds only). */
-  autoUpdateCheck: boolean
-
   /** The Timers tab: which events alert, and how (a chime; the bubble shaking). */
   timers: {
     /** The server region: weekly events are at its own local time. */
@@ -72,8 +69,6 @@ export interface Settings {
     /** 0..1 */
     volume: number
     shake: boolean
-    /** Share field boss timers: send what your map shows, get what other players' maps show. */
-    share: boolean
     /** Listed in the Timers tab; only these alert. */
     shown: Record<TimerId, boolean>
   }
@@ -121,7 +116,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   hideFromCapture: false,
   faction: 'elyos',
   playerLevel: null,
-  autoUpdateCheck: true,
   hideMaxed: true,
   timers: {
     region: 'na-east',
@@ -130,7 +124,6 @@ export const SETTINGS_DEFAULTS: Settings = {
     sound: true,
     volume: 0.5,
     shake: true,
-    share: true,
     shown: Object.fromEntries(TIMERS.map((t) => [t.id, defaultShown(t)])) as Record<TimerId, boolean>,
   },
   sleepWithoutGame: true,
@@ -162,7 +155,6 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
     }
     case 'panelOnTop':
     case 'hideFromCapture':
-    case 'autoUpdateCheck':
     case 'hideMaxed':
     case 'sleepWithoutGame':
       return bool(value, d[key] as boolean) as Settings[K]
@@ -200,7 +192,6 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
         sound: bool(v.sound, d.timers.sound),
         volume: num(v.volume, 0, 1, d.timers.volume),
         shake: bool(v.shake, d.timers.shake),
-        share: bool(v.share, d.timers.share),
         shown: Object.fromEntries(
           TIMERS.map((t) => [t.id, bool((v.shown as Partial<Record<TimerId, unknown>> | undefined)?.[t.id], defaultShown(t))]),
         ) as Record<TimerId, boolean>,

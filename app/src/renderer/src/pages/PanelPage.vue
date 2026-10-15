@@ -73,33 +73,6 @@ onBeforeUnmount(() => {
       </button>
     </header>
 
-    <div
-      v-if="store.update.state === 'available' || store.update.state === 'downloading' || store.update.state === 'ready'"
-      class="flex items-center gap-2 border-b border-card bg-accent-soft/60 px-3 py-2 text-xs"
-    >
-      <span class="min-w-0 flex-1 text-dark">
-        <template v-if="store.update.state === 'available'">Version {{ store.update.version }} is available.</template>
-        <template v-else-if="store.update.state === 'downloading'">Downloading {{ store.update.version }}… {{ store.update.percent ?? 0 }}%</template>
-        <template v-else>Version {{ store.update.version }} is ready.</template>
-      </span>
-      <button
-        v-if="store.update.state === 'available'"
-        type="button"
-        class="rounded bg-accent px-2 py-0.5 font-semibold text-white hover:bg-accent-hover"
-        @click="bridge().invoke('update:download')"
-      >
-        Download
-      </button>
-      <button
-        v-if="store.update.state === 'ready'"
-        type="button"
-        class="rounded bg-accent px-2 py-0.5 font-semibold text-white hover:bg-accent-hover"
-        @click="bridge().invoke('update:install')"
-      >
-        Restart to install
-      </button>
-    </div>
-
     <nav v-if="store.openPetId === null" class="flex gap-1 border-b border-card px-2 pt-1.5">
       <button
         v-for="t in TABS"

@@ -288,12 +288,6 @@ const shownCount = computed(() => TIMERS.filter((d) => shown(d.id)).length)
         <SettingRow label="Shake the bubble" hint="Every few seconds while an alert is up.">
           <Toggle :model-value="cfg.shake" @update:model-value="set({ shake: $event })" />
         </SettingRow>
-        <SettingRow
-          label="Share field boss timers"
-          :warning="cfg.share ? undefined : 'Disabling this option blocks server updates for field boss timers and only uses your map'"
-        >
-          <Toggle :model-value="cfg.share" @update:model-value="set({ share: $event })" />
-        </SettingRow>
       </div>
     </section>
   </div>

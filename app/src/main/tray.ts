@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { DISPLAY_NAME } from '../shared/app.ts'
 import { settings } from './settings.ts'
 import { tracker } from './tracker.ts'
-import { updates } from './update.ts'
 import { hudIsEditing, markQuitting, setHudEditing, showPanel, togglePanel } from './windows.ts'
 
 let tray: Tray | null = null
@@ -21,9 +20,6 @@ function menu(): Menu {
     },
     { label: hudIsEditing() ? 'Done moving HUD' : 'Move HUD…', click: () => setHudEditing(!hudIsEditing()) },
     { label: 'Restart tracker', click: () => tracker.restart() },
-    ...(updates.status().state === 'ready'
-      ? [{ label: `Restart to install ${updates.status().version}`, click: () => updates.install() }]
-      : []),
     { type: 'separator' },
     {
       label: 'Quit',

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // HUD, panel, privacy and tracker settings. Every change applies at once.
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import Button from '@/components/Button.vue'
 import SettingRow from '@/components/SettingRow.vue'
 import Slider from '@/components/Slider.vue'
@@ -14,27 +14,6 @@ onMounted(async () => (info.value = await bridge().invoke('app:info')))
 
 const pct = (v: number): string => `${Math.round(v * 100)}%`
 
-const updateText = computed(() => {
-  const u = store.update
-  switch (u.state) {
-    case 'unsupported':
-      return 'A development run: updates come with the installed app.'
-    case 'checking':
-      return 'Checking…'
-    case 'none':
-      return 'Up to date.'
-    case 'available':
-      return `Version ${u.version} is available.`
-    case 'downloading':
-      return `Downloading ${u.version}… ${u.percent ?? 0}%`
-    case 'ready':
-      return `Version ${u.version} is downloaded; a restart installs it.`
-    case 'error':
-      return `Could not check: ${u.error ?? 'unknown error'}`
-    default:
-      return 'Not checked yet.'
-  }
-})
 const python = ref(store.settings.tracker.python)
 const savePython = (): Promise<void> => store.set('tracker', { ...store.settings.tracker, python: python.value.trim() })
 </script>
@@ -178,37 +157,6 @@ const savePython = (): Promise<void> => store.set('tracker', { ...store.settings
         <div class="flex justify-end pt-1">
           <Button size="sm" @click="bridge().invoke('tracker:restart')">Restart tracker</Button>
         </div>
-      </div>
-    </section>
-
-    <section>
-      <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-darkest">Updates</h3>
-      <div class="divide-y divide-[color:var(--gray-4)] rounded-lg border border-card bg-card px-3">
-        <SettingRow label="Check for updates automatically" hint="Shortly after starting and every 6 hours. Nothing downloads without your click.">
-          <Toggle :model-value="store.settings.autoUpdateCheck" @update:model-value="store.set('autoUpdateCheck', $event)" />
-        </SettingRow>
-        <SettingRow :label="`Version ${store.update.current || info?.version || '…'}`" :hint="updateText">
-          <Button
-            v-if="store.update.state === 'available'"
-            size="sm"
-            intent="primary"
-            @click="bridge().invoke('update:download')"
-          >
-            Download {{ store.update.version }}
-          </Button>
-          <Button v-else-if="store.update.state === 'ready'" size="sm" intent="primary" @click="bridge().invoke('update:install')">
-            Restart to install
-          </Button>
-          <Button
-            v-else
-            size="sm"
-            :loading="store.update.state === 'checking' || store.update.state === 'downloading'"
-            :disabled="store.update.state === 'unsupported'"
-            @click="bridge().invoke('update:check')"
-          >
-            Check now
-          </Button>
-        </SettingRow>
       </div>
     </section>
 
