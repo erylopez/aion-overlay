@@ -9,16 +9,22 @@ another server) and the stream locks onto it instead. Flows that are not the gam
 while, so the one locked onto later keeps what it sent first (a login's collection data).
 
 Live capture listens on every adapter that has an address at once: with a VPN or a ping reducer
-the game's traffic is only readable on the tunnel adapter, which is not Windows' default one.
+the game's traffic is only readable on the tunnel adapter, which is not Windows' default one. Each
+adapter is read by its own thread, and frames are decoded from their bytes, not by scapy: scapy's
+one loop over every adapter waited out a quiet adapter's 100 ms read timeout between packets of
+the busy one, ~10 packets a second in all, and Npcap dropped the rest of the game's traffic.
 """
 
 from __future__ import annotations
 
+import socket
+import struct
 import threading
 import time
 from collections.abc import Callable, Iterator
+from ctypes import byref
 
-from scapy.all import IP, TCP, AsyncSniffer, PcapReader, conf
+from scapy.all import IP, TCP, IPv6, PcapReader, conf
 
 from . import protocol
 
@@ -37,6 +43,7 @@ GAP_WAIT_S = 2.0
 GAP_WAIT_BYTES = 65536
 REPORT_S = 30.0  # while there is no game stream, how often the log says what each adapter sees
 QUIET_S = 15.0  # the locked flow silent this long counts as no game stream, for the reports
+KERNEL_BUFFER = 16 * 1024 * 1024  # Npcap's buffer per adapter (1 MB by default): room for bursts
 
 FlowKey = tuple[str, int, str, int]
 
@@ -196,13 +203,68 @@ class GameStream:
 
 def _segments(packets) -> Iterator[tuple]:
     for p in packets:
-        if IP in p and TCP in p:
-            ip, t = p[IP], p[TCP]
-            # Trim to the IP length: short frames carry Ethernet padding that scapy leaves on
-            # the TCP payload, and it would be read as stream bytes.
+        if TCP not in p:
+            continue
+        t = p[TCP]
+        # Trim to the IP length: short frames carry Ethernet padding that scapy leaves on the TCP
+        # payload, and it would be read as stream bytes.
+        if IP in p:
+            ip = p[IP]
             size = ip.len - ip.ihl * 4 - t.dataofs * 4
-            data = bytes(t.payload)[: max(size, 0)]
-            yield float(p.time), ip.src, t.sport, ip.dst, t.dport, t.seq, data
+        elif IPv6 in p:
+            ip = p[IPv6]
+            size = ip.plen - t.dataofs * 4
+        else:
+            continue
+        data = bytes(t.payload)[: max(size, 0)]
+        yield float(p.time), ip.src, t.sport, ip.dst, t.dport, t.seq, data
+
+
+# Link types whose frames _decode reads itself; any other goes through scapy.
+DLT_ETHERNET, DLT_NULL, DLT_LOOP = 1, 0, 108
+DLT_RAW = (12, 14, 101, 228, 229)
+DECODED = (DLT_ETHERNET, DLT_NULL, DLT_LOOP, *DLT_RAW)
+
+
+def _ip_at(linktype: int, raw: bytes) -> int | None:
+    """Where the IP header starts in a frame of this link type; None if it carries no IP."""
+    if linktype == DLT_ETHERNET:
+        at, ethertype = 14, raw[12:14]
+        while ethertype in (b"\x81\x00", b"\x88\xa8") and len(raw) >= at + 4:  # VLAN tags
+            ethertype, at = raw[at + 2 : at + 4], at + 4
+        return at if ethertype in (b"\x08\x00", b"\x86\xdd") else None
+    if linktype in (DLT_NULL, DLT_LOOP):  # loopback: a 4-byte address family first
+        return 4
+    return 0 if linktype in DLT_RAW else None
+
+
+def _decode(linktype: int, ts: float, raw: bytes) -> tuple | None:
+    """A TCP frame as (ts, src, sport, dst, dport, seq, payload), read from its bytes."""
+    at = _ip_at(linktype, raw)
+    if at is None or len(raw) < at + 20:
+        return None
+    version = raw[at] >> 4
+    if version == 4:
+        if raw[at + 9] != 6 or struct.unpack_from("!H", raw, at + 6)[0] & 0x1FFF:
+            return None  # not TCP, or a fragment after the first
+        total = struct.unpack_from("!H", raw, at + 2)[0]
+        end = at + total if total else len(raw)  # 0: segmentation offload, the frame says how long
+        src, dst = socket.inet_ntoa(raw[at + 12 : at + 16]), socket.inet_ntoa(raw[at + 16 : at + 20])
+        tcp = at + (raw[at] & 0x0F) * 4
+    elif version == 6:
+        if len(raw) < at + 40 or raw[at + 6] != 6:
+            return None  # not TCP (or behind extension headers, which the game's flow never has)
+        plen = struct.unpack_from("!H", raw, at + 4)[0]
+        end = at + 40 + plen if plen else len(raw)
+        src = socket.inet_ntop(socket.AF_INET6, raw[at + 8 : at + 24])
+        dst = socket.inet_ntop(socket.AF_INET6, raw[at + 24 : at + 40])
+        tcp = at + 40
+    else:
+        return None
+    if len(raw) < tcp + 20:
+        return None
+    sport, dport, seq = struct.unpack_from("!HHI", raw, tcp)
+    return ts, src, sport, dst, dport, seq, raw[tcp + (raw[tcp + 12] >> 4) * 4 : end]
 
 
 def replay(path: str, stream: GameStream, speed: float | None = None,
@@ -248,27 +310,91 @@ def _open(log: Callable[[str], None]) -> dict:
     return sockets
 
 
+def _linktype(sock) -> int | None:
+    try:
+        return int(sock.pcap_fd.datalink())
+    except Exception:  # noqa: BLE001 -- not an Npcap socket: scapy decodes its frames
+        return None
+
+
+def _enlarge_buffer(sock) -> None:
+    try:
+        from scapy.libs.winpcapy import pcap_setbuff  # Npcap only
+        pcap_setbuff(sock.pcap_fd.pcap, KERNEL_BUFFER)
+    except Exception:  # noqa: BLE001 -- the default buffer still works
+        pass
+
+
+def _drops(sock) -> int | None:
+    """Packets Npcap dropped on this adapter since it was opened (its buffer was full)."""
+    try:
+        from scapy.libs.winpcapy import pcap_stat, pcap_stats
+        stat = pcap_stat()
+        return int(stat.ps_drop) if pcap_stats(sock.pcap_fd.pcap, byref(stat)) == 0 else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def live(stream: GameStream, iface: str | None = None, save_to: str | None = None,
          stop: threading.Event | None = None, log: Callable[[str], None] = print) -> None:
     """Runs until Ctrl+C, or until `stop` is set. Listens on every adapter (see pick_interfaces)
-    unless `iface` names one. `save_to` also writes everything captured to a .pcap for later
-    replay."""
+    unless `iface` names one, each from its own thread. `save_to` also writes everything captured
+    to a .pcap for later replay."""
     from scapy.utils import PcapWriter
 
     sockets = {conf.L2listen(iface=iface, filter="tcp"): iface} if iface else _open(log)
+    for sock in sockets:
+        _enlarge_buffer(sock)
     writer = PcapWriter(save_to, append=True, sync=True) if save_to else None
+    halt = stop or threading.Event()
+    done = threading.Event()
+    # One segment at a time into the stream, whichever adapter it came from. The counters and the
+    # stream's candidates are read under it too.
+    lock = threading.Lock()
     counts = {name: 0 for name in sockets.values()}  # TCP packets per adapter since the last report
+    dropped = {name: _drops(sock) for sock, name in sockets.items()}  # Npcap's count at the last report
+    failed: dict[str, str] = {}
+    errors = [0]  # packets the stream or the tracker failed on; the first few are logged
 
-    def handle(p):
-        if writer is not None:
-            writer.write(p)
-        counts[p.sniffed_on] += 1
-        for seg in _segments([p]):
-            before = stream.port
-            stream.segment(*seg)
-            if stream.port != before:
-                was = f" (was port {before})" if before is not None else ""
-                log(f"[capture] game stream locked on {p.sniffed_on}: server {seg[1]}:{stream.port}{was}")
+    def read(sock, name: str) -> None:
+        linktype = _linktype(sock)
+        try:
+            while not (halt.is_set() or done.is_set()):
+                asked = time.monotonic()
+                cls, raw, ts = sock.recv_raw()  # Npcap: up to 100 ms, then None
+                if raw is None:
+                    if time.monotonic() - asked < 0.001:
+                        time.sleep(0.01)  # an error at once, not the read timeout: do not spin
+                    continue
+                if linktype in DECODED:
+                    seg = _decode(linktype, ts, raw)
+                else:
+                    pkt = cls(raw)
+                    pkt.time = ts
+                    seg = next(_segments([pkt]), None)
+                with lock:
+                    counts[name] += 1
+                    if writer is not None:
+                        pkt = cls(raw)
+                        pkt.time = ts
+                        writer.write(pkt)
+                    if seg is None:
+                        continue
+                    before = stream.port
+                    try:
+                        stream.segment(*seg)
+                    except Exception as e:  # noqa: BLE001 -- one odd packet must not end the capture
+                        errors[0] += 1
+                        if errors[0] <= 5:
+                            log(f"[capture] packet from {seg[1]}:{seg[2]} failed: {type(e).__name__}: {e}")
+                        continue
+                    if stream.port != before:
+                        was = f" (was port {before})" if before is not None else ""
+                        log(f"[capture] game stream locked on {name}: server {seg[1]}:{stream.port}{was}")
+        except Exception as e:  # noqa: BLE001 -- one adapter failing must not stop the others
+            if not (halt.is_set() or done.is_set()):
+                failed[name] = f"{type(e).__name__}: {e}"
+                log(f"[capture] stopped listening on {name}: {failed[name]}")
 
     def quiet_for() -> float | None:
         """Seconds the game stream has been missing: never locked, or the locked flow silent."""
@@ -277,39 +403,48 @@ def live(stream: GameStream, iface: str | None = None, save_to: str | None = Non
         silent = stream.silent_for(time.time())
         return silent if silent is not None and silent >= QUIET_S else None
 
-    def report(quiet: float) -> None:
-        seen = ", ".join(f"{name} {n}" for name, n in counts.items())
+    def report(quiet: float | None) -> None:
+        with lock:
+            seen = ", ".join(f"{name} {n}" for name, n in counts.items())
+            top = sorted(stream.candidates.items(), key=lambda kv: -kv[1])[:5]
+            for name in counts:
+                counts[name] = 0
+            stream.candidates.clear()
+        lost = []
+        for sock, name in sockets.items():
+            now = _drops(sock)
+            if now is not None and dropped[name] is not None and now > dropped[name]:
+                lost.append(f"{name} {now - dropped[name]}")
+            dropped[name] = now
+        if quiet is None:
+            if lost:  # the game is tracked, but some of it may be missing
+                log(f"[capture] Npcap dropped packets in the last {REPORT_S:.0f}s: {', '.join(lost)}")
+            return
         what = "no game stream yet" if stream.port is None else f"the game stream (port {stream.port}) silent for {quiet:.0f}s"
-        top = sorted(dict(stream.candidates).items(), key=lambda kv: -kv[1])[:5]  # a copy: the sniffer thread adds to it
         flows = ", ".join(f"{h}:{port} {n}" for (h, port), n in top) or "none"
-        log(f"[capture] {what}; TCP packets in the last {REPORT_S:.0f}s: {seen}; flows carrying the game's terminator: {flows}")
-        for name in counts:
-            counts[name] = 0
-        stream.candidates.clear()
+        log(f"[capture] {what}; TCP packets in the last {REPORT_S:.0f}s: {seen}; "
+            f"flows carrying the game's terminator: {flows}; dropped by Npcap: {', '.join(lost) or 'none'}")
 
-    halt = stop or threading.Event()
-    sniffer = AsyncSniffer(opened_socket=sockets, prn=handle, store=False)
+    threads = [threading.Thread(target=read, args=(sock, name), name=f"capture {name}", daemon=True)
+               for sock, name in sockets.items()]
     started = next_report = time.monotonic()
     next_report += REPORT_S
-    sniffer.start()
+    for t in threads:
+        t.start()
     try:
         # Short waits, so Ctrl+C gets through on Windows.
         while not halt.wait(1.0):
-            if not sniffer.thread.is_alive():
-                raise RuntimeError(f"capture ended on its own: {sniffer.exception or 'every adapter failed'}")
+            if len(failed) == len(sockets):
+                raise RuntimeError("capture ended on its own: " + "; ".join(f"{n}: {e}" for n, e in failed.items()))
             if time.monotonic() >= next_report:
-                if (quiet := quiet_for()) is not None:
-                    report(quiet)
-                else:
-                    for name in counts:
-                        counts[name] = 0
-                    stream.candidates.clear()
+                report(quiet_for())
                 next_report += REPORT_S
     except KeyboardInterrupt:
         pass
     finally:
-        if sniffer.thread.is_alive():
-            sniffer.stop()
+        done.set()
+        for t in threads:
+            t.join(timeout=2.0)
         for sock in sockets:
             sock.close()
         if writer is not None:
