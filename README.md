@@ -1,9 +1,10 @@
-# Nyerk
+# Lokthar overlay
 
-> **Private offline build** of [xCROv/aion2-nyerk](https://github.com/xCROv/aion2-nyerk). This copy
-> makes no network connections: the auto-updater, the machine id and the shared field boss
-> timers are removed, and the app cancels any http(s)/websocket request its windows make. Build it
-> from source (below); do not install the upstream release over it.
+> **Lokthar's private build** of [xCROv/aion2-nyerk](https://github.com/xCROv/aion2-nyerk) (GPL-3.0),
+> renamed from Nyerk. The auto-updater, the machine id and the shared field boss timers are
+> removed, and the app cancels any http(s)/websocket request its windows make. Its one network
+> feature is the **Lokthar sync** (off by default): see below. Build it from source (below); do not
+> install the upstream release over it.
 
 A Windows overlay that counts your Aion 2 Pet Collection souls as they drop, so you don't have
 to keep opening the Pets menu.
@@ -36,13 +37,28 @@ The tracker **only listens** and functions the exact same as popular DPS Meters 
 [Npcap](https://npcap.com). It never sends anything to the game
 or its servers, never reads or changes the game's memory, and sends no input.
 
-This build talks to nothing: no update checks, no shared timers, no machine id. Everything it reads
-stays on your PC (`%APPDATA%\Nyerk`). Links you click (questlog.gg) open in your browser.
+No update checks, no shared timers, no machine id. Everything it reads stays on your PC
+(`%APPDATA%\Lokthar`; an older `%APPDATA%\Nyerk` is moved there on first start). Links you click
+(questlog.gg) open in your browser.
+
+### Lokthar sync (optional)
+
+With **Settings → Lokthar sync** on, the field boss list your map shows is posted to the Lokthar
+site's timers (`POST <site>/api/aion2/field_bosses`), so the guild's spawn tracker follows the
+game's own respawn times. It is the only request the app makes: to that one address (https only),
+whenever the list changes while your map is open, carrying the bosses' ids, whether each is up and
+its time, and your game server id. Nothing else: no character name, no collection, no packets.
+
+It needs a token, issued on the site's server for an account that may report kills:
+
+```bash
+bin/rails 'overlay:token[<user id, Discord username or email>]'   # bin/rails 'overlay:revoke[...]' to revoke
+```
 
 ## Install
 
 1. Install [Npcap](https://npcap.com) (the default options are fine).
-2. Download `Nyerk-Setup-<version>.exe` from this repo's Releases (built by
+2. Download `Lokthar-Setup-<version>.exe` from this repo's Releases (built by
    `.github/workflows/build.yml` on a tag push), or build it from source (below), and run it. It
    installs for your Windows account only. The installer is not code-signed, so Windows may show "Windows protected your
    PC": choose **More info → Run anyway**.

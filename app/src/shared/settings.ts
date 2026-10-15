@@ -82,6 +82,18 @@ export interface Settings {
    */
   sleepWithoutGame: boolean
 
+  /**
+   * Sync the field bosses to the Lokthar site's timers (main/lokthar.ts): off until turned on with
+   * a token. The only network request the app makes, to `url` alone.
+   */
+  lokthar: {
+    sync: boolean
+    /** The site, e.g. https://lokthar.com: https only (http for localhost, to test against a dev server). */
+    url: string
+    /** From the site: bin/rails 'overlay:token[you]'. */
+    token: string
+  }
+
   tracker: {
     /** The Python interpreter; empty = the repo's .venv. */
     python: string
@@ -127,6 +139,7 @@ export const SETTINGS_DEFAULTS: Settings = {
     shown: Object.fromEntries(TIMERS.map((t) => [t.id, defaultShown(t)])) as Record<TimerId, boolean>,
   },
   sleepWithoutGame: true,
+  lokthar: { sync: false, url: 'https://lokthar.com', token: '' },
   tracker: { python: '', dataFile: '' },
 }
 
@@ -201,6 +214,14 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
       return (value === 'asmodians' ? 'asmodians' : 'elyos') as Settings[K]
     case 'playerLevel':
       return (typeof value === 'number' && Number.isFinite(value) ? Math.round(num(value, 1, 99, 1)) : null) as Settings[K]
+    case 'lokthar': {
+      const v = (value ?? {}) as Partial<Settings['lokthar']>
+      return {
+        sync: bool(v.sync, d.lokthar.sync),
+        url: typeof v.url === 'string' && v.url.trim() ? v.url.trim().replace(/\/+$/, '') : d.lokthar.url,
+        token: typeof v.token === 'string' ? v.token.trim() : '',
+      } as Settings[K]
+    }
     case 'tracker': {
       const v = (value ?? {}) as Partial<Settings['tracker']>
       return {

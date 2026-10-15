@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// HUD, panel, privacy and tracker settings. Every change applies at once.
+// HUD, panel, privacy, Lokthar sync and tracker settings. Every change applies at once.
 import { onMounted, ref } from 'vue'
 import Button from '@/components/Button.vue'
 import SettingRow from '@/components/SettingRow.vue'
@@ -7,6 +7,7 @@ import Slider from '@/components/Slider.vue'
 import Toggle from '@/components/Toggle.vue'
 import { bridge } from '@/lib/bridge.ts'
 import { useApp } from '@/stores/app.ts'
+import type { SyncResult } from '@shared/lokthar.ts'
 
 const store = useApp()
 const info = ref<{ version: string; settingsFile: string; logFile: string } | null>(null)
@@ -16,6 +17,22 @@ const pct = (v: number): string => `${Math.round(v * 100)}%`
 
 const python = ref(store.settings.tracker.python)
 const savePython = (): Promise<void> => store.set('tracker', { ...store.settings.tracker, python: python.value.trim() })
+
+// The Lokthar sync: the site and its token, a connection check, and how the last post went.
+const siteUrl = ref(store.settings.lokthar.url)
+const token = ref(store.settings.lokthar.token)
+const syncResult = ref<SyncResult | null>(null)
+const testing = ref(false)
+onMounted(async () => (syncResult.value = await bridge().invoke('lokthar:last')))
+const saveLokthar = (patch: Partial<typeof store.settings.lokthar>): Promise<void> =>
+  store.set('lokthar', { ...store.settings.lokthar, ...patch })
+async function testSync(): Promise<void> {
+  testing.value = true
+  await saveLokthar({ url: siteUrl.value.trim(), token: token.value.trim() })
+  syncResult.value = await bridge().invoke('lokthar:test')
+  testing.value = false
+}
+const ago = (at: number): string => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 </script>
 
 <template>
@@ -127,6 +144,47 @@ const savePython = (): Promise<void> => store.set('tracker', { ...store.settings
         <SettingRow label="Hide from screen recordings" hint="Keeps the bubble, panel and HUD out of OBS, Discord and screenshots.">
           <Toggle :model-value="store.settings.hideFromCapture" @update:model-value="store.set('hideFromCapture', $event)" />
         </SettingRow>
+      </div>
+    </section>
+
+    <section>
+      <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-darkest">Lokthar sync</h3>
+      <div class="divide-y divide-[color:var(--gray-4)] rounded-lg border border-card bg-card px-3">
+        <SettingRow
+          label="Sync field bosses"
+          hint="Sends the field boss list your map shows (ids, up or dead, times, your server) to the Lokthar timers. Nothing else, and only to the site below."
+        >
+          <Toggle :model-value="store.settings.lokthar.sync" @update:model-value="saveLokthar({ sync: $event })" />
+        </SettingRow>
+        <div class="space-y-2 py-2 text-xs">
+          <label class="block">
+            <span class="text-darker">Site</span>
+            <input
+              v-model="siteUrl"
+              class="mt-1 h-7 w-full rounded-md border border-light bg-default px-2 text-xs"
+              placeholder="https://lokthar.com"
+              @change="saveLokthar({ url: siteUrl.trim() })"
+            />
+          </label>
+          <label class="block">
+            <span class="text-darker">Token</span>
+            <input
+              v-model="token"
+              type="password"
+              autocomplete="off"
+              class="mt-1 h-7 w-full rounded-md border border-light bg-default px-2 text-xs"
+              placeholder="lkt_…"
+              @change="saveLokthar({ token: token.trim() })"
+            />
+          </label>
+          <div class="flex items-center justify-between gap-2 pt-1">
+            <span v-if="syncResult" :class="['min-w-0 truncate', syncResult.ok ? 'text-darker' : 'text-red']" :title="syncResult.message">
+              {{ ago(syncResult.at) }}: {{ syncResult.message }}
+            </span>
+            <span v-else class="text-darkest">Not synced yet</span>
+            <Button size="sm" :disabled="testing" @click="testSync">{{ testing ? 'Testing…' : 'Test' }}</Button>
+          </div>
+        </div>
       </div>
     </section>
 

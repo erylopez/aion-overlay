@@ -1,5 +1,6 @@
 /** Every invoke handler, typed against the contract in shared/ipc.ts. */
 import { app, ipcMain, shell } from 'electron'
+import { lokthar } from './lokthar.ts'
 import { settings } from './settings.ts'
 import { timers } from './timers.ts'
 import { logPath, tracker } from './tracker.ts'
@@ -61,6 +62,8 @@ export function registerIpc(): void {
     if (Number.isInteger(pet) && typeof name === 'string' && name.trim()) tracker.setName(pet, name.trim().slice(0, 60))
   })
   handle('tracker:restart', () => tracker.restart())
+  handle('lokthar:test', () => lokthar.test())
+  handle('lokthar:last', () => lokthar.last())
   handle('tracker:resetSession', () => tracker.resetSession())
 
   handle('bubble:moveTo', (to) => {

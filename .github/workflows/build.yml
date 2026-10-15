@@ -57,7 +57,7 @@ jobs:
         id: sum
         working-directory: app/dist
         run: |
-          $exe = Get-ChildItem Nyerk-Setup-*.exe | Select-Object -First 1
+          $exe = Get-ChildItem Lokthar-Setup-*.exe | Select-Object -First 1
           $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
           "$hash  $($exe.Name)" | Out-File -Encoding ascii "$($exe.Name).sha256"
           "exe=$($exe.Name)" >> $env:GITHUB_OUTPUT
@@ -80,8 +80,8 @@ jobs:
           HASH: ${{ steps.sum.outputs.hash }}
         run: |
           gh release create "$GITHUB_REF_NAME" "$EXE" "$EXE.sha256" \
-            --title "Nyerk $GITHUB_REF_NAME (offline build)" \
-            --notes "Offline build of Nyerk from commit $GITHUB_SHA: no updater, no shared timers, no machine id.
+            --title "Lokthar overlay $GITHUB_REF_NAME" \
+            --notes "Lokthar overlay from commit $GITHUB_SHA: no updater, no shared timers, no machine id. Its only network request is the optional Lokthar field boss sync (off by default).
 
           Needs [Npcap](https://npcap.com) installed first. The installer is not code-signed: Windows may say \"Windows protected your PC\", choose More info → Run anyway.
 

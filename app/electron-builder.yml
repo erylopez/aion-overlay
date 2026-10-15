@@ -1,14 +1,15 @@
 # Windows installer: per-user NSIS (no admin rights), like marnis-app's.
 #
-#   npm run dist      -> dist/Nyerk-Setup-<version>.exe
+#   npm run dist      -> dist/Lokthar-Setup-<version>.exe
 #
 # The tracker helper is the PyInstaller build in ../build/sidecar/aion2-tracker (npm run dist builds
 # it first: scripts/build-sidecar.mjs). Npcap is not bundled: its licence does not allow it, and
 # the app tells the user to install it.
 # appId, executableName and the package name (the install folder) are kept from the first release:
-# the updater and the installed copy are found by them. The product name was renamed in 0.1.11.
+# the installed copy is found by them, so a new build installs over the old one. The product name
+# was renamed in 0.1.11, 0.2.0 and 0.3.0 (Nyerk -> Lokthar).
 appId: com.xcrov.aion2-drop-tracker
-productName: Nyerk
+productName: Lokthar
 executableName: Aion2DropTracker
 directories:
   output: dist
@@ -29,5 +30,5 @@ nsis:
   oneClick: true
   perMachine: false
   deleteAppDataOnUninstall: false
-  shortcutName: Nyerk
-  artifactName: Nyerk-Setup-${version}.${ext}
+  shortcutName: Lokthar
+  artifactName: Lokthar-Setup-${version}.${ext}

@@ -1,8 +1,8 @@
 {
   "name": "aion2-drop-tracker",
-  "productName": "Nyerk",
-  "version": "0.2.2",
-  "description": "In-game overlay for the Aion 2 drop tracker: pet souls and collection progress.",
+  "productName": "Lokthar",
+  "version": "0.3.0",
+  "description": "Lokthar's Aion 2 overlay: pet souls, collection progress, timers and the guild's field boss sync.",
   "private": true,
   "main": "./out/main/index.js",
   "author": "xcrov",

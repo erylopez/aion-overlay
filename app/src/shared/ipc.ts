@@ -4,6 +4,7 @@
  * pattern is marnis-app's (shared/ipc-contract.ts), with this app's channels.
  */
 import type { KinaSession } from './kina.ts'
+import type { SyncResult } from './lokthar.ts'
 import type { Point, SettingKey, Settings } from './settings.ts'
 import type { FieldBosses, TimerAlert, TimerId } from './timers.ts'
 import type { Nearby, Pet, ShopStock, SoulToast, TrackerStatus } from './tracker.ts'
@@ -45,6 +46,9 @@ export interface InvokeChannels {
   'timers:open': { args: []; result: void }
   /** Open the panel on a pet's drop locations (from the merchant window). */
   'panel:showPet': { args: [pet: number]; result: void }
+  /** The Lokthar sync: check the address and token; the last attempt's outcome. */
+  'lokthar:test': { args: []; result: SyncResult }
+  'lokthar:last': { args: []; result: SyncResult | null }
 }
 
 /** Main → renderer, broadcast. */
@@ -94,6 +98,7 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'bubble:moveTo', 'bubble:dragEnd', 'panel:toggle', 'panel:hide', 'panel:setExpanded',
   'hud:setEditing', 'hud:moveTo', 'hud:dragEnd', 'hud:resize',
   'merchant:moveTo', 'merchant:dragEnd', 'merchant:resize', 'merchant:close', 'panel:showPet', 'timers:get', 'timers:dismiss', 'timers:open',
+  'lokthar:test', 'lokthar:last',
 ]
 
 export const EVENT_CHANNELS: readonly EventChannel[] = [

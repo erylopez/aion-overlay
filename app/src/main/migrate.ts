@@ -1,6 +1,7 @@
 /**
- * The app was renamed twice, and its data folder with it: "Aion 2 Drop Tracker" became "Aion2 Pet
- * Tracker" in 0.1.11, and that became "Nyerk" in 0.2.0. On the first start after a rename the old
+ * The app was renamed three times, and its data folder with it: "Aion 2 Drop Tracker" became "Aion2
+ * Pet Tracker" in 0.1.11, that became "Nyerk" in 0.2.0, and this private build is "Lokthar" from
+ * 0.3.0. On the first start after a rename the old
  * folder is moved across whole (collection, settings, logs, the updater's id, the field bosses),
  * before anything reads or writes the new one. If it cannot be moved, the collection and settings
  * are copied instead and the old folder is left as it was. index.ts calls it right after
@@ -11,7 +12,7 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** The data folders of older names, newest first: an install that skipped versions has the oldest. */
-export const OLD_NAMES = ['Aion2 Pet Tracker', 'Aion 2 Drop Tracker']
+export const OLD_NAMES = ['Nyerk', 'Aion2 Pet Tracker', 'Aion 2 Drop Tracker']
 
 /**
  * Move the app's own files from `from` into `to`, drop the rest (Chromium's caches and state, which

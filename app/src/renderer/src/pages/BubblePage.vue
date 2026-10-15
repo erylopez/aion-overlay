@@ -63,7 +63,7 @@ const title = computed(() =>
       @pointerdown="drag.onPointerDown"
       @pointerup="drag.onPointerUp"
     >
-      <img :key="pulse" src="/icon.png" alt="" draggable="false" :class="['size-12 rounded-full', pulse && 'animate-soul']" />
+      <img :key="pulse" src="/icon.png" alt="" draggable="false" :class="['size-12 rounded-full bg-[#141528] p-1 object-contain', pulse && 'animate-soul']" />
       <span
         v-if="store.sessionSouls > 0"
         class="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-bold tabular-nums text-white shadow"

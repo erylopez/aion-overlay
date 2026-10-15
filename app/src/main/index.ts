@@ -1,5 +1,5 @@
 /**
- * Nyerk (an Aion 2 pet collection tracker): a tray app with a floating bubble, a panel and an in-game HUD, fed by the
+ * Lokthar (an Aion 2 overlay: pet collection, timers, the guild's field boss sync): a tray app with a floating bubble, a panel and an in-game HUD, fed by the
  * Python tracker running as a child process.
  */
 import { app, session } from 'electron'
@@ -10,6 +10,7 @@ import { startHealthWatch } from './health.ts'
 import { registerIpc } from './ipc.ts'
 import { settings } from './settings.ts'
 import { startIdleWatch } from './idle.ts'
+import { startLokthar } from './lokthar.ts'
 import { join } from 'node:path'
 import { moveDataFolder, OLD_NAMES } from './migrate.ts'
 import { startTimers } from './timers.ts'
@@ -36,6 +37,7 @@ if (!app.requestSingleInstanceLock()) {
     blockNetwork()
     startHealthWatch()
     startFieldBosses()
+    startLokthar()
     startOnTopWatch()
     registerIpc()
     createTray()
@@ -69,7 +71,8 @@ if (!app.requestSingleInstanceLock()) {
    * No network: the windows only ever load the app's own files, so any http(s) or websocket
    * request from them (a stray URL, a library reaching out) is cancelled, on top of index.html's
    * CSP. A development run still reaches its local Vite server. Links the user clicks open in the
-   * browser (windows.ts) and are not affected.
+   * browser (windows.ts) and are not affected, nor is the Lokthar sync, which is off unless turned
+   * on and goes from the main process to the one address in Settings (lokthar.ts).
    */
   function blockNetwork(): void {
     const filter = { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }
