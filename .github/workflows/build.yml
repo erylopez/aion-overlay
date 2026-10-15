@@ -1,0 +1,88 @@
+# The Windows installer, built on a GitHub runner: the tracker helper is a PyInstaller build and
+# PyInstaller only builds for the system it runs on.
+#
+#   git tag v0.2.0-offline.1 && git push origin v0.2.0-offline.1
+#       builds, and attaches the installer and its SHA-256 to a release named after the tag
+#   Actions → Build → Run workflow
+#       builds only: the installer is kept as the run's artifact
+name: Build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Tracker helper dependencies
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python -m pip install -e . pyinstaller==6.22.3
+
+      - name: App dependencies
+        working-directory: app
+        run: npm ci
+
+      # build/ is not in the repo: the icon is drawn by a script.
+      - name: Icon
+        working-directory: app
+        run: npm run icon
+
+      - name: Typecheck
+        working-directory: app
+        run: npm run typecheck
+
+      - name: Installer
+        working-directory: app
+        run: npm run dist
+
+      - name: Checksum
+        id: sum
+        working-directory: app/dist
+        run: |
+          $exe = Get-ChildItem Nyerk-Setup-*.exe | Select-Object -First 1
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exe.Name)" | Out-File -Encoding ascii "$($exe.Name).sha256"
+          "exe=$($exe.Name)" >> $env:GITHUB_OUTPUT
+          "hash=$hash" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer
+          path: |
+            app/dist/${{ steps.sum.outputs.exe }}
+            app/dist/${{ steps.sum.outputs.exe }}.sha256
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: app/dist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXE: ${{ steps.sum.outputs.exe }}
+          HASH: ${{ steps.sum.outputs.hash }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$EXE" "$EXE.sha256" \
+            --title "Nyerk $GITHUB_REF_NAME (offline build)" \
+            --notes "Offline build of Nyerk from commit $GITHUB_SHA: no updater, no shared timers, no machine id.
+
+          Needs [Npcap](https://npcap.com) installed first. The installer is not code-signed: Windows may say \"Windows protected your PC\", choose More info → Run anyway.
+
+          SHA-256 of \`$EXE\`: \`$HASH\`"

@@ -42,8 +42,9 @@ stays on your PC (`%APPDATA%\Nyerk`). Links you click (questlog.gg) open in your
 ## Install
 
 1. Install [Npcap](https://npcap.com) (the default options are fine).
-2. Build `Nyerk-Setup-<version>.exe` from source (below) and run it. It installs for your Windows
-   account only. The installer is not code-signed, so Windows may show "Windows protected your
+2. Download `Nyerk-Setup-<version>.exe` from this repo's Releases (built by
+   `.github/workflows/build.yml` on a tag push), or build it from source (below), and run it. It
+   installs for your Windows account only. The installer is not code-signed, so Windows may show "Windows protected your
    PC": choose **More info → Run anyway**.
 3. Start the tracker **before you log in** to your character, so it picks up your collection.
 
