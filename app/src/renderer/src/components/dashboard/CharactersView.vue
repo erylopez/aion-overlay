@@ -7,6 +7,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import ClassIcon from '@/components/ClassIcon.vue'
 import Countdown from '@/components/ui/Countdown.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import { bridge } from '@/lib/bridge.ts'
 import { loc, t } from '@/lib/i18n.ts'
 import { useApp } from '@/stores/app.ts'
 import { ASCENSION, characterId, counterNow, ENERGY, NIGHTMARE, type CounterNow, type Refill, type TrackedCharacter } from '@shared/characters.ts'
@@ -17,6 +18,8 @@ const now = ref(Date.now())
 const ticker = setInterval(() => (now.value = Date.now()), 1000)
 onBeforeUnmount(() => clearInterval(ticker))
 
+/** The game's item icons (questlog.gg's copies, in public/items): energy, and the boss entry ticket. */
+const ICONS = { energy: 'items/odyle-energy.webp', ticket: 'items/boss-ticket.webp' }
 /** The game's colour for charged energy. */
 const CHARGED = '#3ce0d0'
 
@@ -48,6 +51,19 @@ const servers = computed(() => {
 })
 const tracked = computed(() => Object.values(store.characters).filter((c) => c.counters).length)
 const total = computed(() => Object.keys(store.characters).length)
+
+/** Characters being asked again (the refresh button). */
+const refreshing = ref(new Set<string>())
+async function refresh(id: string): Promise<void> {
+  refreshing.value = new Set(refreshing.value).add(id)
+  try {
+    await bridge().invoke('characters:refresh', id)
+  } finally {
+    const next = new Set(refreshing.value)
+    next.delete(id)
+    refreshing.value = next
+  }
+}
 
 const num = (n: number | null): string => (n === null ? '–' : n.toLocaleString('en-US'))
 
@@ -117,7 +133,23 @@ const pct = (c: CounterNow): number => Math.min(100, (c.now / c.max) * 100)
               <ClassIcon :class-name="r.c.className" :size="56" :class="['opacity-40', !r.c.counters && 'grayscale']" />
             </div>
             <div class="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-[#111113] via-[#111113]/70 to-transparent" />
-            <span v-if="r.playing" class="absolute left-2 top-2 rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">{{ t('Playing') }}</span>
+            <div class="absolute left-2 top-2 flex items-center gap-1">
+              <span v-if="r.playing" class="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">{{ t('Playing') }}</span>
+              <button
+                type="button"
+                :disabled="refreshing.has(r.id)"
+                :class="[
+                  'flex size-6 items-center justify-center rounded-full bg-black/60 text-default backdrop-blur-sm transition hover:bg-accent disabled:cursor-wait',
+                  r.c.portrait && !refreshing.has(r.id) ? 'opacity-0 group-hover:opacity-100' : '',
+                ]"
+                :title="t('Ask NCSoft again for the portrait and combat power')"
+                @click="refresh(r.id)"
+              >
+                <svg viewBox="0 0 16 16" :class="['size-3.5', refreshing.has(r.id) && 'animate-spin']" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" />
+                </svg>
+              </button>
+            </div>
             <span v-if="r.c.level" class="absolute right-2 top-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-default backdrop-blur-sm">Lv {{ r.c.level }}</span>
             <div class="absolute inset-x-0 bottom-0 px-3 pb-2.5">
               <div class="flex items-center gap-1.5">
@@ -141,7 +173,7 @@ const pct = (c: CounterNow): number => Math.min(100, (c.now / c.max) * 100)
             {{ t('Log in to track it') }}
           </div>
           <div v-else-if="r.energy" class="flex items-center gap-1.5 border-t border-card bg-dark/60 px-3 py-1.5 text-[11px] tabular-nums" :title="t('Odyle Energy')">
-            <svg viewBox="0 0 16 16" class="size-3 shrink-0 text-emerald-400" fill="currentColor"><path d="M9 1 3 9h4l-1 6 6-8H8z" /></svg>
+            <img :src="ICONS.energy" alt="" draggable="false" class="size-4 shrink-0" />
             <span class="font-semibold">{{ r.energy.now }}</span>
             <span v-if="r.energy.extra" class="font-semibold" :style="{ color: CHARGED }">(+{{ r.energy.extra }})</span>
             <span class="ml-auto text-darkest">/ {{ r.energy.max }}</span>
@@ -155,9 +187,15 @@ const pct = (c: CounterNow): number => Math.min(100, (c.now / c.max) * 100)
           <thead class="bg-card text-xs uppercase tracking-wide text-darker">
             <tr class="border-b border-card">
               <th class="py-2.5 pl-4 text-left font-medium">{{ t('Character') }}</th>
-              <th class="px-3 text-left font-medium">{{ t('Odyle Energy') }}</th>
-              <th class="w-40 px-3 text-left font-medium">Nightmare</th>
-              <th class="w-40 px-3 text-left font-medium">{{ t('Ascension Trial') }}</th>
+              <th class="px-3 text-left font-medium">
+                <span class="flex items-center gap-1.5"><img :src="ICONS.energy" alt="" draggable="false" class="size-5" />{{ t('Odyle Energy') }}</span>
+              </th>
+              <th class="w-44 whitespace-nowrap px-3 text-left font-medium">
+                <span class="flex items-center gap-1.5"><img :src="ICONS.ticket" alt="" draggable="false" class="size-5" />Nightmare</span>
+              </th>
+              <th class="w-44 whitespace-nowrap px-3 text-left font-medium">
+                <span class="flex items-center gap-1.5"><img :src="ICONS.ticket" alt="" draggable="false" class="size-5" />{{ t('Ascension Trial') }}</span>
+              </th>
               <th class="w-36 whitespace-nowrap pr-4 text-right font-medium">{{ t('Last read') }}</th>
             </tr>
           </thead>

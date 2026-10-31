@@ -24,6 +24,8 @@ let characters: Characters = {}
 /** Asked or failed recently, by id: not asked again before then. */
 const asked = new Map<string, number>()
 let fetching = false
+/** Asked for while a fetch was going: another round after it. */
+let again = false
 
 const file = (): string => join(app.getPath('userData'), 'characters.json')
 
@@ -90,30 +92,44 @@ async function fetchPortrait(c: TrackedCharacter): Promise<string | null> {
   if (!c.key) return null
   const res = await fetch(portraitUrl(c.server, c.key), { redirect: 'follow', signal: AbortSignal.timeout(15_000) })
   const type = res.headers.get('content-type') ?? ''
-  if (!res.ok || !type.startsWith('image/')) return null
+  if (!res.ok || !type.startsWith('image/')) {
+    log(`characters: ${c.name}'s portrait: HTTP ${res.status} ${type}`)
+    return null
+  }
   return `data:${type};base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`
 }
 
-/** Ask NCSoft about each character not asked in a day, one at a time. */
+/** Ask NCSoft about one character: its combat power and portrait, each kept when the other fails. */
+async function fetchOne(c: TrackedCharacter): Promise<void> {
+  const [power, portrait] = await Promise.allSettled([fetchCombatPower(c), fetchPortrait(c)])
+  const got = <T>(r: PromiseSettledResult<T | null>): T | null => (r.status === 'fulfilled' ? r.value : null)
+  c.combatPower = got(power) ?? c.combatPower
+  c.portrait = got(portrait) ?? c.portrait
+  // Done for the day only with both: a missing portrait is asked again after RETRY_MS.
+  if (got(power) !== null && (got(portrait) !== null || !c.key)) c.fetchedAt = Date.now()
+  const why = (r: PromiseSettledResult<unknown>): string => (r.status === 'rejected' ? ` (${(r.reason as Error).message})` : '')
+  log(`characters: ${c.name} from NCSoft: combat power ${got(power) ?? '?'}${why(power)}, portrait ${got(portrait) ? 'yes' : 'no'}${why(portrait)}`)
+  changed()
+}
+
+/** Ask NCSoft about each character not asked in a day, or still without a portrait, one at a time. */
 async function fetchMissing(): Promise<void> {
-  if (fetching) return
+  if (fetching) {
+    again = true
+    return
+  }
   fetching = true
   try {
-    for (const [id, c] of Object.entries(characters)) {
-      const now = Date.now()
-      if ((c.fetchedAt && now - c.fetchedAt < FETCH_EVERY_MS) || (asked.get(id) ?? 0) > now) continue
-      asked.set(id, now + RETRY_MS)
-      try {
-        const [power, portrait] = await Promise.all([fetchCombatPower(c), fetchPortrait(c)])
-        c.combatPower = power ?? c.combatPower
-        c.portrait = portrait ?? c.portrait
-        if (power !== null || portrait !== null) c.fetchedAt = now
-        log(`characters: ${c.name} from NCSoft: combat power ${power ?? '?'}, portrait ${portrait ? 'yes' : 'no'}`)
-        changed()
-      } catch (err) {
-        log(`characters: ${c.name} not found on NCSoft: ${(err as Error).message}`)
+    do {
+      again = false
+      for (const [id, c] of Object.entries(characters)) {
+        const now = Date.now()
+        const due = !c.fetchedAt || now - c.fetchedAt >= FETCH_EVERY_MS || (!c.portrait && !!c.key)
+        if (!due || (asked.get(id) ?? 0) > now) continue
+        asked.set(id, now + RETRY_MS)
+        await fetchOne(c)
       }
-    }
+    } while (again)
   } finally {
     fetching = false
   }
@@ -121,6 +137,13 @@ async function fetchMissing(): Promise<void> {
 
 export const characterStore = {
   all: (): Characters => characters,
+  /** Ask NCSoft again now (the refresh button). */
+  async refresh(id: string): Promise<void> {
+    const c = characters[id]
+    if (!c) return
+    asked.set(id, Date.now() + RETRY_MS)
+    await fetchOne(c)
+  },
   /** Stop tracking a character (it was deleted in game, say). */
   forget(id: string): void {
     delete characters[id]

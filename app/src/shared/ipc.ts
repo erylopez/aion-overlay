@@ -27,6 +27,8 @@ export interface InvokeChannels {
   'tracker:get': { args: []; result: { status: TrackerStatus; pets: Pet[]; nearby: Nearby; shop: ShopStock[]; kina: KinaSession; fieldBosses: FieldBosses; pvp: PvpKill[]; cubes: Cube[]; enemies: Enemy[]; target: TargetPlayer | null } }
   /** Your characters (the Characters page). */
   'characters:get': { args: []; result: Characters }
+  /** Ask NCSoft for a character's combat power and portrait again. */
+  'characters:refresh': { args: [id: string]; result: void }
   /** Stop tracking a character. */
   'characters:forget': { args: [id: string]; result: void }
   /** Empty the PvP log. */
@@ -222,7 +224,7 @@ export interface Bridge {
 export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'app:info', 'app:quit', 'app:openPath',
   'settings:all', 'settings:set',
-  'tracker:get', 'characters:get', 'characters:forget', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession', 'tracker:clearPvp',
+  'tracker:get', 'characters:get', 'characters:refresh', 'characters:forget', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession', 'tracker:clearPvp',
   'killfeed:open', 'killfeed:close', 'killfeed:moveTo', 'killfeed:dragEnd', 'killfeed:resize',
   'timerbar:moveTo', 'timerbar:dragEnd', 'timerbar:resize',
   'bubble:moveTo', 'bubble:dragEnd', 'panel:toggle', 'panel:hide', 'panel:minimize', 'panel:maximize',

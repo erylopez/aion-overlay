@@ -127,6 +127,7 @@ export function registerIpc(): void {
   })
   handle('tracker:restart', () => tracker.restart())
   handle('characters:get', () => characterStore.all())
+  handle('characters:refresh', (id) => characterStore.refresh(id))
   handle('characters:forget', (id) => characterStore.forget(id))
   handle('lokthar:test', () => lokthar.test())
   handle('lokthar:sync', () => lokthar.syncNow())

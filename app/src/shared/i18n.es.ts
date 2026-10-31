@@ -811,4 +811,5 @@ export const ES: Record<string, string> = {
   'daily': 'por día',
   'weekly': 'por semana',
   'The Characters page: every character of your account with its class, level, gear score, combat power and portrait, and their Odyle Energy, Nightmare and Ascension Trial at a glance, read at each login and refilled on the game\'s schedule in between.': 'La página Personajes: todos los personajes de tu cuenta con su clase, nivel, gear score, combat power y retrato, y su Odyle Energy, Nightmare y Ascension Trial de un vistazo, leídos en cada login y recargados con los horarios del juego entre logins.',
+  'Ask NCSoft again for the portrait and combat power': 'Pedirle de nuevo a NCSoft el retrato y el combat power',
 }
