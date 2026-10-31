@@ -28,6 +28,7 @@ pub const OP_OBJECT_SPAWN: [u8; 2] = [0x34, 0x36];
 pub const OP_OBJECT_REMOVED: [u8; 2] = [0x35, 0x36];
 pub const OP_PLAYER_CARD: [u8; 2] = [0x30, 0x97];
 pub const OP_TARGET_INFO: [u8; 2] = [0x50, 0x36];
+pub const OP_PVP_SWITCH: [u8; 2] = [0x54, 0x36];
 
 /// `42 36`'s flag for a monster killed in combat (1: out of range, 7: gone).
 pub const DEATH_FLAG_COMBAT: u32 = 3;
@@ -549,10 +550,10 @@ pub struct Player {
     pub place: Option<(f32, f32)>,
     /// Their combat power, as the game shows it (`spawn_combat_power`).
     pub combat_power: Option<u32>,
-    /// Their PvP switched on: bit 02 of the byte after the entity. Set on every player the owner
-    /// fought, and on Coby (PvP on), clear on S4iko (off): the owner's 2026-10-26 logs. Set too on
-    /// 45 of the 49 players seen in a fight between factions, the 4 others maybe in a zone where
-    /// PvP is always on.
+    /// Their PvP switched on as they came into view: bit 02 of the fourth byte after the entity.
+    /// Set on Coby, Tributação and RazielGT (PvP on, fought), clear on ZergBR and FAT (off): the
+    /// owner's 2026-10-26 and 10-28 logs. SophieGreen, Zuharïs and Yamiel came in with it clear and
+    /// switched it on in view (`pvp_switch`) before their fights. Later switches come as `54 36`.
     pub pvp: bool,
     /// Where they stand everyone can fight, PvP switched on or not (the Abyss): bit 10 of the
     /// fifth byte after the entity, the one before the name's length. 17 in every spawn of the
@@ -595,7 +596,7 @@ pub fn player(frame: &[u8]) -> Option<Player> {
     let class = u32_at(b, end).filter(|&c| roster_class(c).is_some());
     let place = place_at(b, end + 8);
     let combat_power = spawn_combat_power(b, end);
-    let pvp = b.get(pos).is_some_and(|f| f & 0x02 != 0);
+    let pvp = at == pos + 5 && b[pos + 3] & 0x02 != 0;
     let open_pvp = at == pos + 5 && b[pos + 4] & 0x10 != 0;
     Some(Player { entity, name, server, legion, faction, class, place, combat_power, pvp, open_pvp })
 }
@@ -658,6 +659,18 @@ pub fn player_card(frame: &[u8]) -> Option<PlayerCard> {
     let end = 21 + name.len();
     let valid = (1000..=9999).contains(&server) && (1..=99).contains(&level) && gear_score < 100_000 && u16_at(b, end) == Some(server);
     valid.then_some(PlayerCard { name, server, class: u32_at(b, 8)?, level, gear_score, combat_power: u32_at(b, end + 6)? })
+}
+
+/// `54 36 <entity varint> <01 on | 00 off>`: a player in view (you too) switching their PvP. Seen
+/// on: you, then SophieGreen, Zuharïs and Yamiel a few seconds before their fights (the owner's
+/// 2026-10-26 23:02 log). Off is assumed to be 00, not seen yet.
+pub fn pvp_switch(frame: &[u8]) -> Option<(u32, bool)> {
+    let b = body(frame, OP_PVP_SWITCH)?;
+    let (entity, n) = varint(b, 0)?;
+    match b.get(n..)? {
+        [on] if *on <= 1 => Some((entity, *on == 1)),
+        _ => None,
+    }
 }
 
 /// `47 36 <entity varint> <reason u16>`: a player out of your view (out of
@@ -866,12 +879,13 @@ mod tests {
 
     #[test]
     fn a_player_in_view_reads_its_pvp_switch() {
-        // Coby (PvP on) and S4iko (off), the owner's 2026-10-26 23:47 log.
+        // Coby (PvP on, 2026-10-26 23:47) and ZergBR (off, 2026-10-28): the same first byte, 03.
         let coby = player(&frame(OP_PLAYER, &hex("a00b0320a4030704436f627924000000020280d2c45e9fc7162d95c7"))).unwrap();
-        let s4iko = player(&frame(OP_PLAYER, &hex("a26d0530a40107055334696b6f1c0000000202409285b0a6c71c0eb1"))).unwrap();
+        let zerg = player(&frame(OP_PLAYER, &hex("ab080320a40107065a65726742521b000000020180d2bc941948a4df2248"))).unwrap();
         assert_eq!((coby.name.as_str(), coby.pvp), ("Coby", true));
-        assert_eq!((s4iko.name.as_str(), s4iko.pvp), ("S4iko", false));
-        assert!(!coby.open_pvp && !s4iko.open_pvp);
+        assert_eq!((zerg.name.as_str(), zerg.pvp), ("ZergBR", false));
+        assert!(!coby.open_pvp && !zerg.open_pvp);
+        assert_eq!(pvp_switch(&frame(OP_PVP_SWITCH, &hex("f06c01"))), Some((13936, true)));
         // The Abyss: Lag3rth4, PvP off but there to fight (the owner's 2026-10-27 02:23 log).
         let lag = player(&frame(OP_PLAYER, &hex("ce110530a00117084c616733727468340800000002020240"))).unwrap();
         assert_eq!((lag.name.as_str(), lag.pvp, lag.open_pvp), ("Lag3rth4", false, true));

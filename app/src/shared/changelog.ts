@@ -11,6 +11,12 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.3.9',
+    items: [
+      'The kill feed has a speaker button to mute or unmute the enemy sound.',"Enemies nearby reads players' PvP right: some with it off were marked PvP (and set off the sound), and a player switching it on in view is marked straight away.",
+      'What the game sends as you connect, before the overlay found its connection, is read too: nothing from the login is missed when the overlay opens with the game.'],
+  },
+  {
     version: '0.3.8',
     items: ['The Spacetime Rift and the daily and weekly resets were an hour off: the rift is now at 2, 5, 8... UTC (17:00 in Buenos Aires) and the resets at 07:00 UTC (04:00 in Buenos Aires).'],
   },

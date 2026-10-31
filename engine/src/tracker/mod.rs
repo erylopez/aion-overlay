@@ -759,6 +759,17 @@ impl Tracker {
                 }
             }
             damage::OP_DAMAGE => self.damage(ts, f),
+            p::OP_PVP_SWITCH => {
+                if let Some((entity, on)) = p::pvp_switch(f) {
+                    if let Some(player) = self.players.get_mut(&entity) {
+                        player.pvp = on;
+                    }
+                    if let Some(enemy) = self.enemies.get_mut(&entity).filter(|e| e.pvp != on) {
+                        enemy.pvp = on;
+                        self.enemies_changed(ts);
+                    }
+                }
+            }
             p::OP_PLAYER_GONE => {
                 // Out of view: off the enemies' list (kept among the players, for names on a late
                 // kill credit; a new zone clears those).

@@ -61,6 +61,11 @@ pub(crate) const PORT_MOVE_QUIET_MS: i64 = 5_000;
 /// game, then replayed in order, so its first packets are read too.
 const PORT_MOVE_FLOWS: usize = 6;
 const PORT_MOVE_FLOW_BYTES: usize = 4 * 1024 * 1024;
+/// Before the lock, what every connection sends is kept (at most this many
+/// connections, the quietest giving way) until one locks, then read in order:
+/// the game sends the character list right as it connects, before its
+/// signature rate locks the port, and the meter used to drop it unread.
+const UNLOCKED_FLOWS: usize = 16;
 
 /// A connection seen while the locked port was quiet.
 #[derive(Default)]
@@ -69,6 +74,8 @@ struct WaitingFlow {
     bytes: usize,
     /// Signature hits in the window, and the last one.
     hits: (u32, i64),
+    /// When it last sent anything.
+    last_ms: i64,
 }
 
 /// The connections seen while the locked port is quiet, until one sustains
@@ -112,6 +119,32 @@ impl WaitingFlows {
         let packets = self.flows.remove(&key).map(|f| f.packets).unwrap_or_default();
         self.flows.clear();
         Some((server_port, packets))
+    }
+
+    /// Before the lock: keep `cap` with its connection's packets so far, for
+    /// `take` once a connection locks (see UNLOCKED_FLOWS).
+    fn keep(&mut self, cap: CapturedPayload, now: i64) {
+        let key = (cap.src_port.min(cap.dst_port), cap.src_port.max(cap.dst_port));
+        if !self.flows.contains_key(&key) && self.flows.len() >= UNLOCKED_FLOWS {
+            let quietest = self.flows.iter().min_by_key(|(_, f)| f.last_ms).map(|(k, _)| *k);
+            if let Some(quietest) = quietest {
+                self.flows.remove(&quietest);
+            }
+        }
+        let flow = self.flows.entry(key).or_default();
+        if flow.bytes + cap.data.len() > PORT_MOVE_FLOW_BYTES {
+            return;
+        }
+        flow.last_ms = now;
+        flow.bytes += cap.data.len();
+        flow.packets.push(cap);
+    }
+
+    /// The packets kept of connection `key`, in order; the rest are dropped.
+    fn take(&mut self, key: (u16, u16)) -> Vec<CapturedPayload> {
+        let packets = self.flows.remove(&key).map(|f| f.packets).unwrap_or_default();
+        self.flows.clear();
+        packets
     }
 
     fn clear(&mut self) {
@@ -236,6 +269,9 @@ impl CaptureDispatcher {
         // Connections seen while the locked port is quiet (PORT_MOVE_QUIET_MS),
         // and the packets of the one that took the lock, to read again.
         let mut waiting = WaitingFlows::default();
+        // Before the lock, every connection's packets, to read the locked
+        // one's from its start (see UNLOCKED_FLOWS).
+        let mut unlocked_flows = WaitingFlows::default();
         let mut replay: std::collections::VecDeque<CapturedPayload> = std::collections::VecDeque::new();
 
         loop {
@@ -336,6 +372,43 @@ impl CaptureDispatcher {
                 }
             }
 
+            // Before the lock nothing is parsed: each connection's packets are
+            // kept, and the first to sustain the game's signature rate
+            // (SIGNATURE_LOCK_THRESHOLD hits within SIGNATURE_WINDOW_MS) takes
+            // the lock and is read from its start, signature or not. A single
+            // parsed "damage" never locks: a loopback service misparsed as
+            // damage once stole the lock (port 16005) on a cold start.
+            if current_port.is_none() {
+                if looks_like_tls(&cap.data) || !connections.admit(&cap) {
+                    continue;
+                }
+                let key = (cap.src_port.min(cap.dst_port), cap.src_port.max(cap.dst_port));
+                let signed = contains_any(&cap.data, &COMBAT_SIGNATURES);
+                let (src_port, dst_port, device) = (cap.src_port, cap.dst_port, cap.device_name.clone());
+                unlocked_flows.keep(cap, now);
+                if !signed {
+                    continue;
+                }
+                // The signature only ever travels server->client.
+                self.port_detector.register_candidate(src_port, key, device.as_deref());
+                let slot = sig_hits.entry(key).or_insert((0, now));
+                if now - slot.1 > SIGNATURE_WINDOW_MS {
+                    slot.0 = 0;
+                }
+                slot.0 += 1;
+                slot.1 = now;
+                if slot.0 < SIGNATURE_LOCK_THRESHOLD {
+                    continue;
+                }
+                self.port_detector.confirm_candidate(src_port, dst_port, device.as_deref());
+                if self.port_detector.current_port().is_some() {
+                    sig_hits.clear();
+                    assemblers.clear();
+                    replay.extend(unlocked_flows.take(key));
+                }
+                continue;
+            }
+
             // Port filter. While the locked port is quiet, another connection
             // carrying the game's signature rate takes the lock (a server
             // switch), its packets so far read first (see PORT_MOVE_QUIET_MS).
@@ -381,19 +454,6 @@ impl CaptureDispatcher {
                 }
             }
 
-            // Pre-lock filters. Once a port is locked these checks are skipped
-            // entirely (the port/direction filters above already gate traffic),
-            // keeping the hot path cheap during heavy combat.
-            let unlocked = current_port.is_none();
-            if unlocked {
-                if looks_like_tls(&cap.data) {
-                    continue;
-                }
-                if !contains_any(&cap.data, &COMBAT_SIGNATURES) {
-                    continue;
-                }
-            }
-
             if !connections.admit(&cap) {
                 continue;
             }
@@ -409,31 +469,6 @@ impl CaptureDispatcher {
                 (StreamAssembler::new(), proc)
             });
 
-            if unlocked {
-                self.port_detector.register_candidate(cap.src_port, key, cap.device_name.as_deref());
-                // Count this signature-bearing packet against its source port (the
-                // signature only ever travels server->client). The lock decision is
-                // made below, after process_chunk, so we don't touch `assemblers`
-                // while the assembler for this flow is still borrowed.
-                // Windowed signature rate: reset the count if too long since the last
-                // hit, so only a sustained high-rate flow (the live game) accumulates.
-                let now = now_ms();
-                let slot = sig_hits.entry(key).or_insert((0, now));
-                if now - slot.1 > SIGNATURE_WINDOW_MS {
-                    slot.0 = 0;
-                }
-                slot.0 += 1;
-                slot.1 = now;
-            }
-
-            // A flow locks the port only by sustaining the game's signature RATE
-            // (SIGNATURE_LOCK_THRESHOLD hits within SIGNATURE_WINDOW_MS). We deliberately
-            // do NOT lock on a single parsed-damage event any more: a coincidental
-            // loopback service can momentarily misparse as "damage" and steal the lock
-            // during a cold start (observed locking onto port 16005 instead of the game).
-            // Real combat produces a flood of signatures too, so the rate gate covers
-            // both idle and combat while staying robust. Spawns/names are still parsed
-            // into the store pre-lock, so mobs seen before the first fight stay identified.
             // Hits are timed when they were captured, not when they are parsed:
             // a parser held up for a minute (a save waited on, a busy machine)
             // then read the whole queue at once, and a two-minute boss fight
@@ -449,18 +484,6 @@ impl CaptureDispatcher {
             processor.set_override_timestamp(captured_at);
             let parsed = assembler.process_chunk(&cap.data, processor);
             processor.set_override_timestamp(None);
-
-            let signature_locked =
-                unlocked && sig_hits.get(&key).map(|(c, _)| *c).unwrap_or(0) >= SIGNATURE_LOCK_THRESHOLD;
-            if signature_locked && self.port_detector.current_port().is_none() {
-                self.port_detector.confirm_candidate(cap.src_port, cap.dst_port, cap.device_name.as_deref());
-                // On lock, GC the orphaned candidate assemblers (the relay's
-                // duplicate external flows) so only the locked flow is processed.
-                if self.port_detector.current_port().is_some() {
-                    assemblers.retain(|k, _| *k == key);
-                    sig_hits.clear();
-                }
-            }
 
             if parsed {
                 self.port_detector.mark_packet_parsed();
@@ -629,6 +652,25 @@ mod tests {
             data.extend_from_slice(sig);
             assert!(waiting.offer(flow(13330, 50003, &data), 1_000 + i * (SIGNATURE_WINDOW_MS + 1)).is_none());
         }
+    }
+
+    /// Before the lock: the connection that locks is read from its start
+    /// (the character list, before any signature), the others dropped; with
+    /// too many connections, the quietest gives way.
+    #[test]
+    fn the_locked_connection_is_read_from_before_the_lock() {
+        let mut flows = WaitingFlows::default();
+        flows.keep(flow(13328, 50000, &[0x0B, 0x61, 1]), 1_000);
+        for port in 0..UNLOCKED_FLOWS as u16 {
+            flows.keep(flow(9000 + port, 40000, &[port as u8]), 1_001 + port as i64);
+        }
+        assert!(!flows.flows.contains_key(&(13328, 50000)), "the quietest gave way");
+        flows.keep(flow(13329, 50001, &[0x0B, 0x61, 2]), 2_000);
+        flows.keep(flow(9001, 40000, &[9]), 2_001);
+        flows.keep(flow(13329, 50001, COMBAT_SIGNATURES[0]), 2_002);
+        let packets = flows.take((13329, 50001));
+        assert_eq!(packets.iter().map(|p| p.data.clone()).collect::<Vec<_>>(), vec![vec![0x0B, 0x61, 2], COMBAT_SIGNATURES[0].to_vec()]);
+        assert!(flows.flows.is_empty());
     }
 
     #[test]

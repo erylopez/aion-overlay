@@ -70,6 +70,10 @@ const target = computed(() => {
 })
 const cp = (v: number): string => (v >= 1000 ? `${(v / 1000).toFixed(1)}K` : String(v))
 
+/** The enemy sound (Enemies nearby's), muted or not from here: the same setting as the PvP page's. */
+const enemySound = computed(() => store.settings.enemies.sound)
+const toggleSound = (): void => void store.set('enemies', { ...store.settings.enemies, sound: !enemySound.value })
+
 /** Minimized: the title bar only (the kills and deaths), no kill lines. */
 const toggleCollapsed = (): void => void store.set('killFeed', { ...cfg.value, collapsed: !cfg.value.collapsed })
 
@@ -104,7 +108,21 @@ onBeforeUnmount(() => observer?.disconnect())
           <span class="text-[11px] font-semibold uppercase tracking-wide text-darker">PvP</span>
           <span class="text-xs tabular-nums"><span class="font-semibold text-green">{{ counts.kills }}</span> kills</span>
           <span class="text-xs tabular-nums"><span class="font-semibold text-danger">{{ counts.deaths }}</span> {{ t('deaths') }}</span>
-          <CollapseButton class="ml-auto" :collapsed="cfg.collapsed" @toggle="toggleCollapsed" />
+          <button
+            type="button"
+            :class="['ml-auto flex size-5 shrink-0 items-center justify-center rounded hover:bg-dark hover:text-default', enemySound ? 'text-dark' : 'text-danger']"
+            :title="enemySound ? t('Enemy sound on: click to mute it') : t('Enemy sound muted: click to turn it on')"
+            @pointerdown.stop
+            @dblclick.stop
+            @click="toggleSound"
+          >
+            <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2.5 6h2.5l3.5-3v10L5 10H2.5z" />
+              <path v-if="enemySound" d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6.3 6.3 0 0 1 0 9" />
+              <path v-else d="M10.5 6l4 4M14.5 6l-4 4" />
+            </svg>
+          </button>
+          <CollapseButton :collapsed="cfg.collapsed" @toggle="toggleCollapsed" />
           <button
             type="button"
             class="flex size-5 items-center justify-center rounded text-darker hover:bg-dark hover:text-default"
