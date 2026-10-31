@@ -5,6 +5,7 @@
 // of the game's traffic.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Button from '@/components/Button.vue'
+import MeterSizeSettings from '@/components/MeterSizeSettings.vue'
 import SettingRow from '@/components/SettingRow.vue'
 import Slider from '@/components/Slider.vue'
 import Toggle from '@/components/Toggle.vue'
@@ -196,12 +197,13 @@ onBeforeUnmount(() => offs.forEach((off) => off()))
       <SettingRow label="Show the meter over the game" hint="Its own window while the game is open: drag it by its header, click a player for their skills.">
         <Toggle :model-value="cfg.enabled" @update:model-value="setMeter({ enabled: $event })" />
       </SettingRow>
-      <SettingRow v-if="cfg.enabled" label="Players listed">
+      <SettingRow v-if="cfg.enabled && cfg.height === null" label="Players listed" hint="With a height of its own, the meter lists every player it fits.">
         <Slider :model-value="cfg.rows" :min="1" :max="24" :step="1" @update:model-value="setMeter({ rows: $event })" />
       </SettingRow>
       <SettingRow v-if="cfg.enabled" label="Opacity">
         <Slider :model-value="cfg.opacity" :min="0.3" :max="1" :step="0.05" :format="pct" @update:model-value="setMeter({ opacity: $event })" />
       </SettingRow>
+      <MeterSizeSettings v-if="cfg.enabled" />
     </Section>
 
     <Section title="Recordings" icon="M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z">

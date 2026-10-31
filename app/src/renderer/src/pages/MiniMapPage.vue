@@ -5,17 +5,22 @@
 // looks around, and it follows you again a few seconds later (or at once, with the circle between them).
 // Always shown while it is on: it keeps the last zone it knew (the zone a tracker started mid-session
 // guesses from the monsters around you, gone when you fly up), and says so while it knows none.
-// The minimize button shrinks it to its header (the zone and the cubes in view).
+// The minimize button shrinks it to its header (the zone and the cubes in view). Its bottom-right
+// corner resizes it (a double-click there makes it the default square again); hovering the map shows
+// a slider for its opacity.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CollapseButton from '@/components/CollapseButton.vue'
+import ResizeGrip from '@/components/ResizeGrip.vue'
 import PetIcon from '@/components/PetIcon.vue'
 import WorldMap, { type MapLayer } from '@/components/WorldMap.vue'
 import { bridge } from '@/lib/bridge.ts'
+import { clampTo, cornerResize } from '@/lib/cornerResize.ts'
 import { plural, t } from '@/lib/i18n.ts'
 import { displayName } from '@/lib/petDb.ts'
 import { currentWorld, nearbyPets, useSpawns } from '@/lib/spawns.ts'
 import { windowDrag } from '@/lib/windowDrag.ts'
 import { useApp } from '@/stores/app.ts'
+import { MINIMAP_HEIGHT, MINIMAP_WIDTH, SETTINGS_DEFAULTS, type Settings } from '@shared/settings.ts'
 import { blankPet } from '@shared/tracker.ts'
 
 /** The map overlay follows you rather than fitting anything. */
@@ -69,7 +74,34 @@ const pet = (id: number) => store.pets.find((p) => p.id === id) ?? blankPet(id)
 const drag = windowDrag({ move: 'minimap:moveTo', end: 'minimap:dragEnd' })
 const setZoom = (zoom: number): void =>
   void store.set('minimap', { ...cfg.value, zoom: Math.min(40, Math.max(1, zoom)) })
-const toggleCollapsed = (): void => void store.set('minimap', { ...cfg.value, collapsed: !cfg.value.collapsed })
+const set = (patch: Partial<Settings['minimap']>): void => void store.set('minimap', { ...cfg.value, ...patch })
+const toggleCollapsed = (): void => set({ collapsed: !cfg.value.collapsed })
+
+/** The size while its corner is being dragged; the saved one otherwise. */
+const live = ref<{ size: number; height: number | null } | null>(null)
+const width = computed(() => live.value?.size ?? cfg.value.size)
+const mapHeight = computed(() => (live.value ? live.value.height : cfg.value.height) ?? width.value)
+/** Drag the corner: the width, and the map's height once it moves up or down (not while minimized). */
+const onGrip = cornerResize({
+  start: () => ({ width: width.value, height: mapHeight.value }),
+  move: (size, vertical) => {
+    const tall = !cfg.value.collapsed && (vertical || cfg.value.height !== null)
+    live.value = { size: clampTo(size.width, MINIMAP_WIDTH), height: tall ? clampTo(size.height, MINIMAP_HEIGHT) : null }
+  },
+  end: () => {
+    if (live.value) set(cfg.value.collapsed ? { size: live.value.size } : live.value)
+    live.value = null
+  },
+})
+const resetSize = (): void => set({ size: SETTINGS_DEFAULTS.minimap.size, height: null })
+
+/** The opacity slider, while it is dragged: applied live, saved on release. */
+const liveOpacity = ref<number | null>(null)
+const opacity = computed(() => liveOpacity.value ?? cfg.value.opacity)
+function saveOpacity(): void {
+  if (liveOpacity.value !== null) set({ opacity: liveOpacity.value })
+  liveOpacity.value = null
+}
 /** The + and - buttons: a step of 1.5 times either way. */
 const ZOOM_STEP = 1.5
 
@@ -83,7 +115,7 @@ function report(): void {
   sent = key
   void api.invoke('minimap:resize', { width: r.width, height: r.height })
 }
-watch([world, () => cfg.value.size, () => cfg.value.collapsed, () => legend.value.length], () => void nextTick(report))
+watch([world, width, mapHeight, () => cfg.value.collapsed, () => legend.value.length], () => void nextTick(report))
 
 let observer: ResizeObserver | null = null
 onMounted(() => {
@@ -98,8 +130,8 @@ onBeforeUnmount(() => observer?.disconnect())
   <div class="inline-block">
     <div ref="root" class="inline-block">
       <div
-        class="m-1.5 overflow-hidden rounded-lg border border-card bg-darker shadow-card"
-        :style="{ width: `${cfg.size}px`, opacity: cfg.opacity }"
+        class="group relative m-1.5 overflow-hidden rounded-lg border border-card bg-darker shadow-card"
+        :style="{ width: `${width}px`, opacity }"
       >
         <header class="flex cursor-move items-center gap-1.5 px-2 py-1 text-[11px]" :title="t('Drag to move')" @pointerdown="drag.onPointerDown">
           <span class="truncate font-semibold text-dark">{{ world?.name ?? t('Map') }}</span>
@@ -114,7 +146,7 @@ onBeforeUnmount(() => observer?.disconnect())
           {{ t("Your zone isn't known yet: change zone (or teleport) and the map shows it.") }}
         </p>
         <template v-else-if="!cfg.collapsed && world">
-        <div class="relative" :style="{ height: `${cfg.size}px` }">
+        <div class="relative" :style="{ height: `${mapHeight}px` }">
           <div class="absolute right-1.5 top-1.5 z-10 flex flex-col overflow-hidden rounded-md border border-black/40 bg-black/60 text-white shadow">
             <button
               type="button"
@@ -170,6 +202,33 @@ onBeforeUnmount(() => observer?.disconnect())
             class="!rounded-none"
             @zoom="setZoom"
           />
+          <!-- Its opacity, while the pointer is over the map. -->
+          <label
+            :class="[
+              'absolute bottom-1.5 left-1.5 z-10 flex items-center gap-1.5 rounded-md border border-black/40 bg-black/60 px-1.5 py-1 text-white shadow transition-opacity',
+              liveOpacity !== null ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+            ]"
+            :title="t('Opacity')"
+            @pointerdown.stop
+            @dblclick.stop
+            @wheel.stop
+          >
+            <svg viewBox="0 0 16 16" class="size-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="5.5" />
+              <path d="M8 2.5v11a5.5 5.5 0 0 0 0-11z" fill="currentColor" stroke="none" />
+            </svg>
+            <input
+              type="range"
+              min="0.3"
+              max="1"
+              step="0.05"
+              :value="opacity"
+              class="h-1 w-20 cursor-pointer accent-[var(--accent)]"
+              @input="liveOpacity = Number(($event.target as HTMLInputElement).value)"
+              @change="saveOpacity"
+            />
+            <span class="w-7 text-right text-[10px] tabular-nums">{{ Math.round(opacity * 100) }}%</span>
+          </label>
         </div>
         <div v-if="legend.length" class="flex flex-wrap gap-x-2 gap-y-1 px-2 py-1.5">
           <span v-for="lg in legend" :key="lg.id" class="flex min-w-0 items-center gap-1 text-[11px] text-dark" :title="displayName(pet(lg.id))">
@@ -179,6 +238,7 @@ onBeforeUnmount(() => observer?.disconnect())
           </span>
         </div>
         </template>
+        <ResizeGrip :active="!!live" @grab="onGrip" @reset="resetSize" />
       </div>
     </div>
   </div>

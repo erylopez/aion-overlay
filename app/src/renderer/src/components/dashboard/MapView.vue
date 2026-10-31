@@ -18,6 +18,7 @@ import { currentWorld, nearbyPets, useSpawns } from '@/lib/spawns.ts'
 import { plural, t } from '@/lib/i18n.ts'
 import { useApp } from '@/stores/app.ts'
 import { blankPet, MAX_LEVEL } from '@shared/tracker.ts'
+import { SETTINGS_DEFAULTS } from '@shared/settings.ts'
 
 const PALETTE = ['#f76b15', '#30a46c', '#0090ff', '#e54666', '#12a594', '#ab4aba', '#ffc53d', '#ffffff']
 const NEEDED = '#a1a1aa'
@@ -151,8 +152,11 @@ const pct = (v: number): string => `${Math.round(v * 100)}%`
       <SettingRow label="Show the map overlay" hint="A small map over the game that follows you, with your tracked pets' spawns and the Hidden Cubes. Scroll or use + and − to zoom.">
         <Toggle :model-value="mini.enabled" @update:model-value="setMini({ enabled: $event })" />
       </SettingRow>
-      <SettingRow v-if="mini.enabled" label="Size">
-        <Slider :model-value="mini.size" :min="160" :max="520" :step="20" :format="(v: number) => `${v}px`" @update:model-value="setMini({ size: $event })" />
+      <SettingRow v-if="mini.enabled" label="Size" hint="Drag the map's bottom-right corner to resize it; a double-click there resets it.">
+        <div class="flex items-center gap-3">
+          <span class="text-sm tabular-nums text-dark">{{ mini.size }} × {{ mini.height ?? mini.size }}</span>
+          <Button size="sm" :disabled="mini.size === SETTINGS_DEFAULTS.minimap.size && mini.height === null" @click="setMini({ size: SETTINGS_DEFAULTS.minimap.size, height: null })">{{ t('Reset') }}</Button>
+        </div>
       </SettingRow>
       <SettingRow v-if="mini.enabled" label="Opacity">
         <Slider :model-value="mini.opacity" :min="0.3" :max="1" :step="0.05" :format="pct" @update:model-value="setMini({ opacity: $event })" />

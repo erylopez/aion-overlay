@@ -19,6 +19,12 @@ export interface Point {
 export const MAX_PINNED = 250
 /** The pinned pets the HUD lists: the rest are counted on a line below them. */
 export const HUD_PINNED_ROWS = 15
+/** The DPS meter's size limits, dragged by its corner: width and height, in DIPs. */
+export const METER_WIDTH = [260, 900] as const
+export const METER_HEIGHT = [120, 1200] as const
+/** The map overlay's: its width, and its map's height. */
+export const MINIMAP_WIDTH = [160, 900] as const
+export const MINIMAP_HEIGHT = [120, 900] as const
 
 export interface Settings {
   /** Where the floating icon sits, in screen DIPs; null = bottom right of the primary display. */
@@ -70,7 +76,8 @@ export interface Settings {
   }
 
   /** The map overlay: your zone around you, your tracked pets' spawns and the Hidden Cubes. */
-  minimap: { enabled: boolean; position: Point | null; size: number; opacity: number; zoom: number; collapsed: boolean }
+  /** `size` is its width; `height` the map's, dragged by the corner (null: square). */
+  minimap: { enabled: boolean; position: Point | null; size: number; height: number | null; opacity: number; zoom: number; collapsed: boolean }
 
   /** Where the Black Cloud Merchant window sits (top-left, screen DIPs); null = top centre. */
   merchantWindow: Point | null
@@ -148,6 +155,12 @@ export interface Settings {
     opacity: number
     /** Shrunk to its title line (the minimize button). */
     collapsed: boolean
+    /** Its size, dragged by its corner: the width, and the height (null: as tall as its rows). */
+    width: number
+    height: number | null
+    /** Hidden while no damage (or healing, or damage taken) has come in for `idleSeconds`. */
+    hideIdle: boolean
+    idleSeconds: number
   }
 
   /** Hide every overlay window from screenshots, OBS and Discord (WDA_EXCLUDEFROMCAPTURE). */
@@ -238,7 +251,7 @@ export const SETTINGS_DEFAULTS: Settings = {
     cubeVolume: 0.6,
     cubeCustomName: null,
   },
-  minimap: { enabled: true, position: null, size: 260, opacity: 0.92, zoom: 6, collapsed: false },
+  minimap: { enabled: true, position: null, size: 260, height: null, opacity: 0.92, zoom: 6, collapsed: false },
   merchantWindow: null,
   detailsWindow: null,
   timerBar: { enabled: true, position: null, opacity: 0.92 },
@@ -247,7 +260,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   skills: { enabled: true, position: null, rows: 6, opacity: 0.92 },
   dummy: { overlay: true, position: null, autoStart: true, goal: 'time', limitMs: 60_000, damageGoal: 10e6, collapsed: false },
   buffs: { enabled: true, position: null, opacity: 0.92, size: 34, perRow: 10, debuffs: true, passives: false, consumables: false, cc: true, ccPosition: null, ccDebuffs: false },
-  meter: { enabled: true, position: null, targetMode: 'bossTargets', players: 'party', stat: 'damage', rows: 8, opacity: 0.92, collapsed: false },
+  meter: { enabled: true, position: null, targetMode: 'bossTargets', players: 'party', stat: 'damage', rows: 8, opacity: 0.92, collapsed: false, width: 340, height: null, hideIdle: false, idleSeconds: 15 },
   hideFromCapture: false,
   language: 'es',
   faction: 'elyos',
@@ -349,7 +362,8 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
       return {
         enabled: bool(v.enabled, d.minimap.enabled),
         position: point(v.position),
-        size: Math.round(num(v.size, 160, 520, d.minimap.size)),
+        size: Math.round(num(v.size, MINIMAP_WIDTH[0], MINIMAP_WIDTH[1], d.minimap.size)),
+        height: v.height === null || v.height === undefined ? null : Math.round(num(v.height, MINIMAP_HEIGHT[0], MINIMAP_HEIGHT[1], d.minimap.size)),
         opacity: num(v.opacity, 0.3, 1, d.minimap.opacity),
         zoom: num(v.zoom, 1, 40, d.minimap.zoom),
         collapsed: bool(v.collapsed, false),
@@ -436,6 +450,10 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
         rows: Math.round(num(v.rows, 1, 24, d.meter.rows)),
         opacity: num(v.opacity, 0.3, 1, d.meter.opacity),
         collapsed: bool(v.collapsed, false),
+        width: Math.round(num(v.width, METER_WIDTH[0], METER_WIDTH[1], d.meter.width)),
+        height: v.height === null || v.height === undefined ? null : Math.round(num(v.height, METER_HEIGHT[0], METER_HEIGHT[1], METER_HEIGHT[0])),
+        hideIdle: bool(v.hideIdle, d.meter.hideIdle),
+        idleSeconds: Math.round(num(v.idleSeconds, 5, 300, d.meter.idleSeconds)),
       } as Settings[K]
     }
     case 'language':

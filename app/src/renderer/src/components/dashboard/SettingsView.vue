@@ -5,6 +5,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Button from '@/components/Button.vue'
 import StatusDot, { statusText } from '@/components/StatusDot.vue'
+import MeterSizeSettings from '@/components/MeterSizeSettings.vue'
 import SettingRow from '@/components/SettingRow.vue'
 import SoundPicker from '@/components/SoundPicker.vue'
 import Slider from '@/components/Slider.vue'
@@ -146,6 +147,13 @@ const lastPacket = computed(() => {
           <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="m6 4 4 4-4 4" /></svg>
         </span>
       </button>
+    </Section>
+
+    <Section title="DPS Meter" icon="M2.5 13.5h11M4.5 11V8M8 11V4.5M11.5 11V6.5">
+      <SettingRow label="Show the meter over the game" hint="Its own window while the game is open: drag it by its header, click a player for their skills.">
+        <Toggle :model-value="store.settings.meter.enabled" @update:model-value="store.set('meter', { ...store.settings.meter, enabled: $event })" />
+      </SettingRow>
+      <MeterSizeSettings v-if="store.settings.meter.enabled" />
     </Section>
 
     <Section title="Pets HUD" icon="M5 6.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM11 6.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM8 9c-2 0-3.5 2-3.5 3.3 0 1 1 1.2 2.2 1.2.6 0 .9-.3 1.3-.3s.7.3 1.3.3c1.2 0 2.2-.2 2.2-1.2C11.5 11 10 9 8 9Z">
