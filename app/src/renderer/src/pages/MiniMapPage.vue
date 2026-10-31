@@ -9,6 +9,7 @@
 // corner resizes it (a double-click there makes it the default square again); hovering the map shows
 // a slider for its opacity.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import CloseButton from '@/components/CloseButton.vue'
 import CollapseButton from '@/components/CollapseButton.vue'
 import ResizeGrip from '@/components/ResizeGrip.vue'
 import PetIcon from '@/components/PetIcon.vue'
@@ -144,7 +145,8 @@ onBeforeUnmount(() => observer?.disconnect())
             {{ plural(store.cubes.length, '{n} cube', '{n} cubes') }}
           </span>
           <span v-if="!store.nearby.position && !cfg.collapsed" class="shrink-0 text-darkest">{{ t('where you are: unknown') }}</span>
-          <CollapseButton :collapsed="cfg.collapsed" class="-my-0.5 -mr-1" @toggle="toggleCollapsed" />
+          <CollapseButton :collapsed="cfg.collapsed" class="-my-0.5" @toggle="toggleCollapsed" />
+          <CloseButton class="-my-0.5 -mr-1" @close="set({ enabled: false })" />
         </header>
         <p v-if="!world && !cfg.collapsed" class="px-2 pb-2 text-[11px] text-darker">
           {{ t("Your zone isn't known yet: change zone (or teleport) and the map shows it.") }}

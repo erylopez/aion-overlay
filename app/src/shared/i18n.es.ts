@@ -97,6 +97,7 @@ export const ES: Record<string, string> = {
   'Click to correct the count': 'Hacé click para corregir el conteo',
   'Click your PvP kills and deaths to see the fight: damage, DPS and skills on both sides.': 'Hacé click en tus kills y muertes de PvP para ver la pelea: daño, DPS y skills de los dos lados.',
   'Close': 'Cerrar',
+  'Close (turn it back on from the app)': 'Cerrar (se vuelve a activar desde la app)',
   'Close (it opens again with the shop)': 'Cerrar (se vuelve a abrir con la tienda)',
   'Close (the PvP page or Home opens it again)': 'Cerrar (la página de PvP o Inicio lo vuelven a abrir)',
   'Close (the Training Dummy page turns it on again)': 'Cerrar (la página de Training Dummy lo vuelve a activar)',

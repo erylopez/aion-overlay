@@ -8,6 +8,7 @@
 // it hides after that long with nothing new on it, and comes back with the next hit.
 // The numbers are the engine's (A2Tools DPS Meter's parser); the class icons and colours are its too.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import CloseButton from '@/components/CloseButton.vue'
 import CollapseButton from '@/components/CollapseButton.vue'
 import ResizeGrip from '@/components/ResizeGrip.vue'
 import { bridge } from '@/lib/bridge.ts'
@@ -215,6 +216,7 @@ onBeforeUnmount(() => {
               </svg>
             </button>
             <CollapseButton :collapsed="cfg.collapsed" @toggle="set({ collapsed: !cfg.collapsed })" />
+            <CloseButton @close="set({ enabled: false })" />
           </div>
           <div v-if="all.length && !cfg.collapsed" class="mt-0.5 flex items-baseline justify-between">
             <span class="text-[12px] text-darker">{{ t(STAT_TITLE[cfg.stat][1]) }} <span class="font-medium text-dark">{{ short(total) }}</span></span>
