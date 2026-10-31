@@ -6,6 +6,7 @@ import { updater } from './updater.ts'
 import { meterState } from './meter.ts'
 import { characterStore } from './characters.ts'
 import { gameMap, regionDisplay } from './gameMap.ts'
+import { mapDetail } from './gameMapDetail.ts'
 import { lokthar } from './lokthar.ts'
 import { packets } from './packets.ts'
 import { settings } from './settings.ts'
@@ -133,7 +134,10 @@ export function registerIpc(): void {
     if (state && typeof state.status === 'string') gameMap.report(state)
   })
   handle('gamemap:get', () => gameMap.state())
+  handle('gamemap:restart', () => gameMap.restart())
   handle('gamemap:display', () => regionDisplay())
+  handle('gamemap:detail', (key, cols, rows) => mapDetail.get(String(key), Number(cols), Number(rows)))
+  handle('gamemap:saveFeatures', (key, data) => mapDetail.saveFeatures(String(key), data))
   handle('characters:get', () => characterStore.all())
   handle('characters:refresh', (id) => characterStore.refresh(id))
   handle('characters:forget', (id) => characterStore.forget(id))

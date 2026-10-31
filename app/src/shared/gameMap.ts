@@ -11,4 +11,9 @@ export interface GameMapState {
   inliers: number
   /** How long a match takes, in ms. */
   ms: number
+  /**
+   * The map matched against: the one the app ships, the game's own at full detail, or that one
+   * being downloaded (once per zone; the shipped one is used meanwhile).
+   */
+  detail?: 'shipped' | 'loading' | 'ready'
 }

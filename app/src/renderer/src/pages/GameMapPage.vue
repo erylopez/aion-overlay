@@ -17,7 +17,7 @@ const FRAME_MS = 120
 /** And made at most this big across (the match needs no more). */
 const PICTURE_PX = 720
 /** A match older than this: the map is gone (closed, or the game hidden). */
-const STALE_MS = 700
+const STALE_MS = 900
 const PALETTE = ['#f76b15', '#30a46c', '#0090ff', '#e54666', '#12a594', '#ab4aba', '#8e8c99', '#ffffff']
 
 const store = useApp()
@@ -36,8 +36,10 @@ const world = computed(() => (spawns.value && worldId.value !== null ? (spawns.v
 // ---- vision ---------------------------------------------------------------------------------
 
 const worker = new MapVision()
-/** The zone map the worker has: its key and size. */
-const reference = ref<{ key: string; width: number; height: number } | null>(null)
+/** The zone map the worker has: its key and size, and whether it is the game's full detail. */
+const reference = ref<{ key: string; width: number; height: number; detail: boolean } | null>(null)
+/** The full detail of the zone, while it is being had (downloaded once, then kept). */
+const detail = ref<'shipped' | 'loading' | 'ready'>('shipped')
 /** The last match, zone map pixels → this window's CSS pixels, and when it was made. */
 const placed = ref<{ m: number[]; at: number } | null>(null)
 let busy = false
@@ -49,7 +51,14 @@ let cssPerPicture = 1
 worker.onmessage = (e: MessageEvent): void => {
   const msg = e.data
   if (msg.type === 'reference') {
-    reference.value = msg.error ? null : { key: msg.key, width: msg.width, height: msg.height }
+    reference.value = msg.error ? null : { key: msg.key, width: msg.width, height: msg.height, detail: !!msg.detail }
+    if (msg.detail) detail.value = 'ready'
+    else if (!msg.error) void loadDetail(msg.key)
+    return
+  }
+  if (msg.type === 'features') return void api.invoke('gamemap:saveFeatures', msg.key, msg.data)
+  if (msg.type === 'detailError') {
+    detail.value = 'shipped'
     return
   }
   busy = false
@@ -67,10 +76,27 @@ watch(
     if (!w || reference.value?.key === w.key) return
     reference.value = null
     placed.value = null
+    detail.value = 'shipped'
     worker.postMessage({ type: 'reference', key: w.key, url: new URL(mapImage(w), location.href).href })
   },
   { immediate: true },
 )
+
+/** The game's own map of the zone at full detail, for the worker to follow the map on instead. */
+async function loadDetail(key: string): Promise<void> {
+  const w = world.value
+  if (!w || w.key !== key) return
+  detail.value = 'loading'
+  const [, , cols, rows] = w.sectors
+  const got = await api.invoke('gamemap:detail', key, cols, rows)
+  if (world.value?.key !== key) return
+  if (!got) {
+    detail.value = 'shipped'
+    return
+  }
+  if (got.kind === 'features') worker.postMessage({ type: 'detail', key, features: got.data }, [got.data])
+  else worker.postMessage({ type: 'detail', key, cols: got.cols, rows: got.rows, tiles: got.tiles }, got.tiles)
+}
 
 // ---- capture ----------------------------------------------------------------------------------
 
@@ -108,7 +134,11 @@ function snap(): void {
   const data = pictureCtx.getImageData(0, 0, w, h).data
   cssPerPicture = region.width / w
   busy = true
-  worker.postMessage({ type: 'frame', width: w, height: h, rgba: data }, [data.buffer])
+  // Where you are on the zone map: a lost map is looked for around you first (it opens on you).
+  const pos = store.nearby.position
+  const ref = reference.value
+  const player = pos && world.value && ref ? project(world.value, pos).map((v, i) => v * (i ? ref.height : ref.width)) : null
+  worker.postMessage({ type: 'frame', width: w, height: h, rgba: data, player }, [data.buffer])
 }
 
 // ---- drawing ----------------------------------------------------------------------------------
@@ -246,6 +276,7 @@ function report(): void {
     world: worldId.value,
     inliers: found.value ? lastInliers : 0,
     ms: lastMs,
+    detail: detail.value,
   }
   const key = JSON.stringify(state)
   if (key === reported) return

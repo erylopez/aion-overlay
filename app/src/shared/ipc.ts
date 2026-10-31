@@ -33,6 +33,12 @@ export interface InvokeChannels {
   /** From the overlay: how the search for the game's map is going. */
   'gamemap:report': { args: [state: GameMapState]; result: void }
   'gamemap:get': { args: []; result: GameMapState }
+  /** Start the markers on the game's map over: a new screen capture and a new search. */
+  'gamemap:restart': { args: []; result: void }
+  /** A zone's map at full detail (downloaded once, then kept): its keypoints, or its tiles; null while it cannot be had. */
+  'gamemap:detail': { args: [key: string, cols: number, rows: number]; result: { kind: 'features'; data: ArrayBuffer } | { kind: 'tiles'; cols: number; rows: number; tiles: ArrayBuffer[] } | null }
+  /** The keypoints the worker made of a zone's tiles, kept for next time. */
+  'gamemap:saveFeatures': { args: [key: string, data: ArrayBuffer]; result: void }
   /** The display the region is on (the overlay cuts the region out of its picture). */
   'gamemap:display': { args: []; result: { bounds: Rect; scaleFactor: number } | null }
   /** Your characters (the Characters page). */
@@ -236,7 +242,7 @@ export interface Bridge {
 export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'app:info', 'app:quit', 'app:openPath',
   'settings:all', 'settings:set',
-  'tracker:get', 'gamemap:pick', 'gamemap:setRegion', 'gamemap:report', 'gamemap:get', 'gamemap:display', 'characters:get', 'characters:refresh', 'characters:forget', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession', 'tracker:clearPvp',
+  'tracker:get', 'gamemap:pick', 'gamemap:setRegion', 'gamemap:report', 'gamemap:get', 'gamemap:restart', 'gamemap:detail', 'gamemap:saveFeatures', 'gamemap:display', 'characters:get', 'characters:refresh', 'characters:forget', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession', 'tracker:clearPvp',
   'killfeed:open', 'killfeed:close', 'killfeed:moveTo', 'killfeed:dragEnd', 'killfeed:resize',
   'timerbar:moveTo', 'timerbar:dragEnd', 'timerbar:resize',
   'bubble:moveTo', 'bubble:dragEnd', 'panel:toggle', 'panel:hide', 'panel:minimize', 'panel:maximize',

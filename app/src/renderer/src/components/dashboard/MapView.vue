@@ -3,8 +3,9 @@
 // of the pets you care about: pinned ones and those around you each in their own colour, and,
 // optionally, every pet you still need in grey, and the gatherables (the ones pinned on the
 // Gatherables page, or all). Any zone can be picked; it opens on yours. Its switches are kept as they
-// were left (settings `mapPage`). The map overlay's settings are below it.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+// were left (settings `mapPage`). The map overlay's settings are below it; markers on the game's own
+// map are Map V2's.
+import { computed, ref, watch } from 'vue'
 import Button from '@/components/Button.vue'
 import PetIcon from '@/components/PetIcon.vue'
 import SettingRow from '@/components/SettingRow.vue'
@@ -15,13 +16,11 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import Section from '@/components/ui/Section.vue'
 import SelectBox from '@/components/ui/SelectBox.vue'
 import { gatherLayers, useGatherables } from '@/lib/gatherables.ts'
-import { bridge } from '@/lib/bridge.ts'
 import { displayName } from '@/lib/petDb.ts'
 import { currentWorld, nearbyPets, useSpawns } from '@/lib/spawns.ts'
 import { plural, t } from '@/lib/i18n.ts'
 import { useApp } from '@/stores/app.ts'
 import { blankPet, MAX_LEVEL } from '@shared/tracker.ts'
-import type { GameMapState } from '@shared/gameMap.ts'
 import { SETTINGS_DEFAULTS } from '@shared/settings.ts'
 
 const PALETTE = ['#f76b15', '#30a46c', '#0090ff', '#e54666', '#12a594', '#ab4aba', '#ffc53d', '#ffffff']
@@ -102,24 +101,6 @@ function findMe(): void {
 }
 watch(worldId, () => (focus.value = []))
 
-// Markers on the game's own map (main/gameMap.ts).
-const game = computed(() => store.settings.gameMap)
-const setGame = (patch: Partial<typeof game.value>): void => void store.set('gameMap', { ...game.value, ...patch })
-const pickRegion = (): void => void bridge().invoke('gamemap:pick')
-const gameState = ref<GameMapState>({ status: 'off', world: null, inliers: 0, ms: 0 })
-const GAME_STATUS: Record<GameMapState['status'], string> = {
-  off: 'Off',
-  nomap: 'Your zone is not known yet',
-  searching: "Looking for the game's map",
-  found: 'On the map',
-}
-let offGame: (() => void) | null = null
-onMounted(async () => {
-  offGame = bridge().on('gamemap:state', (s) => (gameState.value = s))
-  gameState.value = await bridge().invoke('gamemap:get')
-})
-onBeforeUnmount(() => offGame?.())
-
 const setMini = (patch: Partial<typeof mini.value>): void => void store.set('minimap', { ...mini.value, ...patch })
 const pct = (v: number): string => `${Math.round(v * 100)}%`
 </script>
@@ -198,41 +179,6 @@ const pct = (v: number): string => `${Math.round(v * 100)}%`
       <SettingRow v-if="mini.enabled" label="Gatherables" hint="Ores, gemstones, logs and plants around you, as their icons: the ones pinned on the Gatherables page, or all of them while none is.">
         <Toggle :model-value="mini.gatherables" @update:model-value="setMini({ gatherables: $event })" />
       </SettingRow>
-    </Section>
-
-    <Section title="On the game's map" icon="M2 2.5h12v11H2zM5 6.5l2 2 4-4M2 10.5h12">
-      <template #actions>
-        <span
-          v-if="game.enabled && game.region"
-          :class="['flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium', gameState.status === 'found' ? 'bg-green/10 text-green' : 'bg-dark text-darker']"
-        >
-          <span :class="['size-1.5 rounded-full', gameState.status === 'found' ? 'bg-green' : gameState.status === 'searching' ? 'animate-pulse bg-yellow' : 'bg-darkest']" />
-          {{ t(GAME_STATUS[gameState.status]) }}
-        </span>
-      </template>
-      <p class="py-3 text-sm text-darker">
-        {{ t("Draws the markers on the game's own map: pick the part of the screen where you keep it open, and the overlay finds your zone's map there and follows it as you zoom and move it.") }}
-      </p>
-      <SettingRow label="Show markers on the game's map" :hint="game.region ? t('Watching {w} × {h} at {x}, {y}.', { w: game.region.width, h: game.region.height, x: game.region.x, y: game.region.y }) : t('Pick where the map is first.')">
-        <div class="flex items-center gap-2">
-          <Button size="sm" @click="pickRegion">{{ game.region ? t('Pick again') : t('Pick where the map is') }}</Button>
-          <Toggle :model-value="game.enabled && !!game.region" :disabled="!game.region" @update:model-value="setGame({ enabled: $event })" />
-        </div>
-      </SettingRow>
-      <template v-if="game.enabled && game.region">
-        <SettingRow label="Gatherables" hint="The ones pinned on the Gatherables page, or all of them while none is.">
-          <Toggle :model-value="game.gatherables" @update:model-value="setGame({ gatherables: $event })" />
-        </SettingRow>
-        <SettingRow label="Tracked pets' spawns" hint="Pinned pets, and the ones whose soul monsters are around you, each in its colour.">
-          <Toggle :model-value="game.pets" @update:model-value="setGame({ pets: $event })" />
-        </SettingRow>
-        <SettingRow label="Hidden Cubes" hint="The ones in view.">
-          <Toggle :model-value="game.cubes" @update:model-value="setGame({ cubes: $event })" />
-        </SettingRow>
-        <SettingRow label="Enemies" hint="Enemy players in view, with their names.">
-          <Toggle :model-value="game.enemies" @update:model-value="setGame({ enemies: $event })" />
-        </SettingRow>
-      </template>
     </Section>
   </div>
 </template>

@@ -132,9 +132,19 @@ export const gameMap = {
     createOverlay()
   },
 
+  /**
+   * Start over (Map V2's button): a new window, so a new screen capture and a new search from
+   * scratch. The zone's detail is kept, so this takes a second or so.
+   */
+  restart(): void {
+    log('game map: restarted by hand')
+    closeOverlay()
+    createOverlay()
+  },
+
   /** What the overlay's page last said about the game's map (shown on the Map page). */
   report(next: GameMapState): void {
-    if (next.status !== state.status || next.world !== state.world || Math.abs(next.inliers - state.inliers) > 3) setState(next)
+    if (next.status !== state.status || next.world !== state.world || next.detail !== state.detail || Math.abs(next.inliers - state.inliers) > 3) setState(next)
     else state = next
   },
 }
