@@ -6,6 +6,7 @@ import { app, session } from 'electron'
 import { DISPLAY_NAME } from '../shared/app.ts'
 import { broadcast } from './broadcast.ts'
 import { startCharacters } from './characters.ts'
+import { applyGameMap, startGameMap } from './gameMap.ts'
 import { startFieldBosses } from './fieldBosses.ts'
 import { startHealthWatch } from './health.ts'
 import { registerIpc } from './ipc.ts'
@@ -45,6 +46,7 @@ if (!app.requestSingleInstanceLock()) {
     startHealthWatch()
     startFieldBosses()
     startCharacters()
+    startGameMap()
     startLokthar()
     startOnTopWatch()
     registerIpc()
@@ -57,6 +59,7 @@ if (!app.requestSingleInstanceLock()) {
     settings.onChanged((all) => {
       broadcast('settings:changed', all)
       applyWindowSettings()
+      applyGameMap()
     })
     startMeter()
     startDummy()

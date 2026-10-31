@@ -150,6 +150,14 @@ Alt+Shift+R starts and stops it from the game, with a pill over the game while i
   [guildmanager.app](https://guildmanager.app), kept in `app/src/renderer/public/events/`.
 - Pet names, genus, portraits, spawn locations and zone maps come from
   [questlog.gg](https://questlog.gg/aion-2/en/db/pets).
+- Gatherable locations and icons come from Lokthar's own site map (lokthar.com/aion2/map), its
+  markers imported from [interactivemap.app](https://interactivemap.app/aion2), bundled by
+  `app/scripts/import-gatherables.mjs`.
+- Markers on the game's own map (find the zone's map in a picture of the screen, follow it, draw
+  over it) take the approach of
+  [problem-xyz/aion2-map-overlay](https://github.com/problem-xyz/aion2-map-overlay), with its
+  author's leave; the code is this project's own. The matching runs on
+  [OpenCV.js](https://opencv.org) (Apache-2.0, through `@techstark/opencv-js`).
 - Aion 2 and its game data and art belong to NCSoft. This project is not affiliated with or
   endorsed by NCSoft or questlog.gg.
 

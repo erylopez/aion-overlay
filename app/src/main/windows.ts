@@ -120,7 +120,7 @@ function overlayWindow(options: Electron.BrowserWindowConstructorOptions): Brows
   return win
 }
 
-function load(win: BrowserWindow, route: string): void {
+export function load(win: BrowserWindow, route: string): void {
   const dev = process.env['ELECTRON_RENDERER_URL']
   if (!app.isPackaged && dev) void win.loadURL(`${dev}#/${route}`)
   else void win.loadFile(join(__dirname, '../renderer/index.html'), { hash: `/${route}` })

@@ -5,13 +5,14 @@
  */
 import type { Buff } from './buffs.ts'
 import type { Characters } from './characters.ts'
+import type { GameMapState } from './gameMap.ts'
 import type { DummyState } from './dummy.ts'
 import type { UpdateState } from './update.ts'
 import type { KinaSession } from './kina.ts'
 import type { DetailsSource, DetailsView, FightSummary, MeterData, PacketLog, PersonalView, Recordings } from './meter.ts'
 import type { SyncResult } from './lokthar.ts'
 import type { CustomSoundResult, SoundSlot } from './sounds.ts'
-import type { Point, SettingKey, Settings } from './settings.ts'
+import type { Point, Rect, SettingKey, Settings } from './settings.ts'
 import type { FieldBosses, TimerAlert, TimerId } from './timers.ts'
 import type { Cube, Enemy, Nearby, TargetPlayer, Pet, PvpKill, ShopStock, SoulToast, TrackerStatus } from './tracker.ts'
 
@@ -25,6 +26,15 @@ export interface InvokeChannels {
   'settings:set': { args: [key: SettingKey, value: unknown]; result: void }
 
   'tracker:get': { args: []; result: { status: TrackerStatus; pets: Pet[]; nearby: Nearby; shop: ShopStock[]; kina: KinaSession; fieldBosses: FieldBosses; pvp: PvpKill[]; cubes: Cube[]; enemies: Enemy[]; target: TargetPlayer | null } }
+  /** Markers on the game's map: drag a box around it (opens the picker). */
+  'gamemap:pick': { args: []; result: void }
+  /** From the picker: the box dragged, in its own coordinates; null when cancelled. */
+  'gamemap:setRegion': { args: [box: Rect | null]; result: void }
+  /** From the overlay: how the search for the game's map is going. */
+  'gamemap:report': { args: [state: GameMapState]; result: void }
+  'gamemap:get': { args: []; result: GameMapState }
+  /** The display the region is on (the overlay cuts the region out of its picture). */
+  'gamemap:display': { args: []; result: { bounds: Rect; scaleFactor: number } | null }
   /** Your characters (the Characters page). */
   'characters:get': { args: []; result: Characters }
   /** Ask NCSoft for a character's combat power and portrait again. */
@@ -175,6 +185,8 @@ export interface EventChannels {
   'tracker:pvpKill': PvpKill
   /** The field bosses, whenever the map's list changes them. */
   'tracker:fieldBosses': FieldBosses
+  /** The search for the game's map, when it changes. */
+  'gamemap:state': GameMapState
   /** Your characters, whenever one changes. */
   'characters:changed': Characters
   /** A timer started alerting (once per start: the chime). */
@@ -224,7 +236,7 @@ export interface Bridge {
 export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'app:info', 'app:quit', 'app:openPath',
   'settings:all', 'settings:set',
-  'tracker:get', 'characters:get', 'characters:refresh', 'characters:forget', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession', 'tracker:clearPvp',
+  'tracker:get', 'gamemap:pick', 'gamemap:setRegion', 'gamemap:report', 'gamemap:get', 'gamemap:display', 'characters:get', 'characters:refresh', 'characters:forget', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession', 'tracker:clearPvp',
   'killfeed:open', 'killfeed:close', 'killfeed:moveTo', 'killfeed:dragEnd', 'killfeed:resize',
   'timerbar:moveTo', 'timerbar:dragEnd', 'timerbar:resize',
   'bubble:moveTo', 'bubble:dragEnd', 'panel:toggle', 'panel:hide', 'panel:minimize', 'panel:maximize',
@@ -239,5 +251,5 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
 ]
 
 export const EVENT_CHANNELS: readonly EventChannel[] = [
-  'settings:changed', 'tracker:status', 'tracker:pets', 'tracker:pet', 'tracker:soul', 'tracker:nearby', 'tracker:cubes', 'tracker:enemies', 'tracker:target', 'tracker:combat', 'tracker:shop', 'tracker:kina', 'tracker:fieldBosses', 'characters:changed', 'tracker:pvp', 'tracker:pvpKill', 'panel:showPet', 'panel:showTimers', 'timers:alert', 'timers:alerting', 'hud:editing', 'panel:visible', 'panel:maximized', 'meter:dps', 'details:source', 'history:changed', 'buffs:list', 'overlays:hidden', 'recordings:changed', 'packets:state', 'dummy:state', 'update:state',
+  'settings:changed', 'tracker:status', 'tracker:pets', 'tracker:pet', 'tracker:soul', 'tracker:nearby', 'tracker:cubes', 'tracker:enemies', 'tracker:target', 'tracker:combat', 'tracker:shop', 'tracker:kina', 'tracker:fieldBosses', 'characters:changed', 'gamemap:state', 'tracker:pvp', 'tracker:pvpKill', 'panel:showPet', 'panel:showTimers', 'timers:alert', 'timers:alerting', 'hud:editing', 'panel:visible', 'panel:maximized', 'meter:dps', 'details:source', 'history:changed', 'buffs:list', 'overlays:hidden', 'recordings:changed', 'packets:state', 'dummy:state', 'update:state',
 ]

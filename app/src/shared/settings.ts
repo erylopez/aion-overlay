@@ -14,6 +14,14 @@ export interface Point {
   y: number
 }
 
+/** A part of the screen, in DIPs. */
+export interface Rect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 /** The most pets pinned at once: past it, a pin is refused (a bound for the saved list, not a
  * limit anyone farms into). */
 export const MAX_PINNED = 250
@@ -81,6 +89,20 @@ export interface Settings {
 
   /** The Map page's switches, kept as they were left: what it shows besides the tracked pets. */
   mapPage: { needed: boolean; cubes: boolean; gatherables: boolean; hiddenPets: number[] }
+
+  /**
+   * Markers on the game's own map (Map page → "On the game's map"): the part of the screen where
+   * you keep the game's map open, and what to draw on it once it is found there.
+   */
+  gameMap: {
+    enabled: boolean
+    /** In screen DIPs; null until picked. */
+    region: Rect | null
+    gatherables: boolean
+    pets: boolean
+    cubes: boolean
+    enemies: boolean
+  }
 
   /** Gatherables pinned on the Gatherables page: the maps show only these (all of them while none is). */
   gatherables: { pinned: string[] }
@@ -260,6 +282,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   minimap: { enabled: true, position: null, size: 260, height: null, opacity: 0.92, zoom: 6, collapsed: false, gatherables: false },
   mapPage: { needed: false, cubes: true, gatherables: false, hiddenPets: [] },
   gatherables: { pinned: [] },
+  gameMap: { enabled: false, region: null, gatherables: true, pets: true, cubes: true, enemies: true },
   merchantWindow: null,
   detailsWindow: null,
   timerBar: { enabled: true, position: null, opacity: 0.92 },
@@ -299,6 +322,12 @@ const point = (v: unknown): Point | null => {
   return p && typeof p.x === 'number' && typeof p.y === 'number' && Number.isFinite(p.x) && Number.isFinite(p.y)
     ? { x: Math.round(p.x), y: Math.round(p.y) }
     : null
+}
+
+const rect = (v: unknown): Rect | null => {
+  const r = v as Partial<Rect> | null
+  const ok = r && [r.x, r.y, r.width, r.height].every((n) => typeof n === 'number' && Number.isFinite(n)) && r.width! >= 40 && r.height! >= 40
+  return ok ? { x: Math.round(r.x!), y: Math.round(r.y!), width: Math.round(r.width!), height: Math.round(r.height!) } : null
 }
 
 /** Coerce one setting to a valid value, falling back to the default for anything malformed. */
@@ -385,6 +414,17 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
         cubes: bool(v.cubes, d.mapPage.cubes),
         gatherables: bool(v.gatherables, d.mapPage.gatherables),
         hiddenPets: Array.isArray(v.hiddenPets) ? [...new Set(v.hiddenPets.filter((n) => Number.isInteger(n)))].slice(0, MAX_PINNED) : [],
+      } as Settings[K]
+    }
+    case 'gameMap': {
+      const v = (value ?? {}) as Partial<Settings['gameMap']>
+      return {
+        enabled: bool(v.enabled, d.gameMap.enabled),
+        region: rect(v.region),
+        gatherables: bool(v.gatherables, d.gameMap.gatherables),
+        pets: bool(v.pets, d.gameMap.pets),
+        cubes: bool(v.cubes, d.gameMap.cubes),
+        enemies: bool(v.enemies, d.gameMap.enemies),
       } as Settings[K]
     }
     case 'gatherables': {
