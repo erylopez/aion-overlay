@@ -77,7 +77,13 @@ export interface Settings {
 
   /** The map overlay: your zone around you, your tracked pets' spawns and the Hidden Cubes. */
   /** `size` is its width; `height` the map's, dragged by the corner (null: square). */
-  minimap: { enabled: boolean; position: Point | null; size: number; height: number | null; opacity: number; zoom: number; collapsed: boolean }
+  minimap: { enabled: boolean; position: Point | null; size: number; height: number | null; opacity: number; zoom: number; collapsed: boolean; gatherables: boolean }
+
+  /** The Map page's switches, kept as they were left: what it shows besides the tracked pets. */
+  mapPage: { needed: boolean; cubes: boolean; gatherables: boolean; hiddenPets: number[] }
+
+  /** Gatherables pinned on the Gatherables page: the maps show only these (all of them while none is). */
+  gatherables: { pinned: string[] }
 
   /** Where the Black Cloud Merchant window sits (top-left, screen DIPs); null = top centre. */
   merchantWindow: Point | null
@@ -251,7 +257,9 @@ export const SETTINGS_DEFAULTS: Settings = {
     cubeVolume: 0.6,
     cubeCustomName: null,
   },
-  minimap: { enabled: true, position: null, size: 260, height: null, opacity: 0.92, zoom: 6, collapsed: false },
+  minimap: { enabled: true, position: null, size: 260, height: null, opacity: 0.92, zoom: 6, collapsed: false, gatherables: false },
+  mapPage: { needed: false, cubes: true, gatherables: false, hiddenPets: [] },
+  gatherables: { pinned: [] },
   merchantWindow: null,
   detailsWindow: null,
   timerBar: { enabled: true, position: null, opacity: 0.92 },
@@ -367,6 +375,22 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
         opacity: num(v.opacity, 0.3, 1, d.minimap.opacity),
         zoom: num(v.zoom, 1, 40, d.minimap.zoom),
         collapsed: bool(v.collapsed, false),
+        gatherables: bool(v.gatherables, d.minimap.gatherables),
+      } as Settings[K]
+    }
+    case 'mapPage': {
+      const v = (value ?? {}) as Partial<Settings['mapPage']>
+      return {
+        needed: bool(v.needed, d.mapPage.needed),
+        cubes: bool(v.cubes, d.mapPage.cubes),
+        gatherables: bool(v.gatherables, d.mapPage.gatherables),
+        hiddenPets: Array.isArray(v.hiddenPets) ? [...new Set(v.hiddenPets.filter((n) => Number.isInteger(n)))].slice(0, MAX_PINNED) : [],
+      } as Settings[K]
+    }
+    case 'gatherables': {
+      const v = (value ?? {}) as Partial<Settings['gatherables']>
+      return {
+        pinned: Array.isArray(v.pinned) ? [...new Set(v.pinned.filter((id) => typeof id === 'string' && /^[a-z0-9-]{1,40}$/.test(id)))].slice(0, 100) : [],
       } as Settings[K]
     }
     case 'timerBar': {

@@ -9,6 +9,7 @@ import CharactersView from '@/components/dashboard/CharactersView.vue'
 import UpdatesView from '@/components/dashboard/UpdatesView.vue'
 import BuffsView from '@/components/dashboard/BuffsView.vue'
 import EventsView from '@/components/dashboard/EventsView.vue'
+import GatherablesView from '@/components/dashboard/GatherablesView.vue'
 import HistoryView from '@/components/dashboard/HistoryView.vue'
 import HomeView from '@/components/dashboard/HomeView.vue'
 import MapView from '@/components/dashboard/MapView.vue'
@@ -30,7 +31,7 @@ import { serverName } from '@shared/servers.ts'
 import { TIMERS, type TimerId } from '@shared/timers.ts'
 import type { UpdateState } from '@shared/update.ts'
 
-type PageId = 'home' | 'characters' | 'meter' | 'training' | 'map' | 'pets' | 'pvp' | 'buffs' | 'events' | 'bosses' | 'history' | 'session' | 'settings' | 'updates' | 'changes'
+type PageId = 'home' | 'characters' | 'meter' | 'training' | 'map' | 'pets' | 'gatherables' | 'pvp' | 'buffs' | 'events' | 'bosses' | 'history' | 'session' | 'settings' | 'updates' | 'changes'
 interface Page {
   id: PageId
   label: string
@@ -45,6 +46,7 @@ const PAGES: Record<PageId, Page> = {
   training: { id: 'training', label: 'Training Dummy', icon: 'M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 8h.01' },
   map: { id: 'map', label: 'Map', icon: 'M1.5 4l4.5-2 4 2 4.5-2v10l-4.5 2-4-2-4.5 2zM6 2v10M10 4v10' },
   pets: { id: 'pets', label: 'Pets', icon: 'M5 6.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM11 6.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM3 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM13 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM8 9c-2 0-3.5 2-3.5 3.3 0 1 1 1.2 2.2 1.2.6 0 .9-.3 1.3-.3s.7.3 1.3.3c1.2 0 2.2-.2 2.2-1.2C11.5 11 10 9 8 9Z' },
+  gatherables: { id: 'gatherables', label: 'Gatherables', icon: 'M3 13.5c1-4 3.5-7 9-10.5-1 4.5-3.5 8-9 10.5zM3 13.5 8 8.5' },
   pvp: { id: 'pvp', label: 'PvP', icon: 'M3 13 13 3M9.5 3H13v3.5M3 3l4 4M13 13l-3-3' },
   buffs: { id: 'buffs', label: 'Buffs', icon: 'M8 1.5 9.8 6l4.7.4-3.6 3 1.1 4.6L8 11.6 4 14l1.1-4.6-3.6-3L6.2 6z' },
   events: { id: 'events', label: 'Event Alerts', icon: 'M4 11V7a4 4 0 0 1 8 0v4l1.5 1.5h-11zM6.5 14h3' },
@@ -57,7 +59,7 @@ const PAGES: Record<PageId, Page> = {
 }
 const SECTIONS: { title: string | null; pages: PageId[] }[] = [
   { title: null, pages: ['home', 'characters'] },
-  { title: 'In game', pages: ['meter', 'training', 'map', 'pets', 'pvp', 'buffs', 'events', 'bosses'] },
+  { title: 'In game', pages: ['meter', 'training', 'map', 'pets', 'gatherables', 'pvp', 'buffs', 'events', 'bosses'] },
   { title: 'Records', pages: ['history', 'session'] },
   { title: 'App', pages: ['updates', 'changes'] },
 ]
@@ -269,6 +271,7 @@ onBeforeUnmount(() => {
             <PetDetail v-if="store.openPetId !== null" :id="store.openPetId" class="-mx-3 h-[calc(100vh-7rem)]" />
             <PetsView v-else />
           </template>
+          <GatherablesView v-else-if="page === 'gatherables'" />
           <BuffsView v-else-if="page === 'buffs'" />
           <EventsView v-else-if="page === 'events'" />
           <BossesView v-else-if="page === 'bosses'" />

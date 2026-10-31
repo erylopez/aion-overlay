@@ -3,8 +3,9 @@
 // space", moved and scaled as one. Wheel zooms around the pointer, dragging pans, and the view
 // fits whatever `focus` is (the selected monster's spawns) whenever it changes. With `follow` (a
 // zoom), it keeps you in the middle instead, at that zoom, until you drag it; a double-click or 10 s
-// later it follows again. Hidden Cubes draw as golden cubes.
+// later it follows again. Hidden Cubes draw as golden cubes, gatherables as their icons.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { IconLayer } from '@/lib/gatherables.ts'
 import { mapImage, project, type World } from '@/lib/spawns.ts'
 import { t } from '@/lib/i18n.ts'
 
@@ -21,6 +22,8 @@ const props = defineProps<{
   focus: [number, number][]
   you?: [number, number] | null
   cubes?: [number, number][]
+  /** Gatherables: each place as its icon, the name on hover. */
+  icons?: IconLayer[]
   /** Enemy players in view: red pins, the name on hover. */
   enemies?: { name: string; position: [number, number] }[]
   /** Keep you in the middle at this zoom (times the whole zone's): the map overlay. */
@@ -42,6 +45,18 @@ const enemyXY = computed(() =>
 /** A map pin's outline, its point at (0, 0), `s` tall. */
 const pinPath = (s: number): string =>
   `M0 0C${-0.12 * s} ${-0.35 * s} ${-0.38 * s} ${-0.5 * s} ${-0.38 * s} ${-0.72 * s}A${0.38 * s} ${0.38 * s} 0 1 1 ${0.38 * s} ${-0.72 * s}C${0.38 * s} ${-0.5 * s} ${0.12 * s} ${-0.35 * s} 0 0Z`
+const iconXY = computed(() =>
+  (props.icons ?? []).map((l) => ({ ...l, xy: l.points.map((p) => project(props.world, p).map((v) => v * SIZE) as [number, number]) })),
+)
+/**
+ * A gatherable's icon, in screen pixels: small over the whole zone (hundreds of them), full size
+ * zoomed in. 6 px at the zone's own size, 18 px from about 8 times it.
+ */
+const iconPx = computed(() => {
+  const { w, h } = boxSize()
+  const ratio = view.value.k / (Math.min(w, h) / SIZE)
+  return Math.min(18, Math.max(6, 4.5 + ratio * 1.7))
+})
 const cubeXY = computed(() => (props.cubes ?? []).map((c) => project(props.world, c).map((v) => v * SIZE) as [number, number]))
 /** A golden cube's three faces, centred on 0,0, at `r` map units across. */
 function cubeFaces(r: number): { top: string; left: string; right: string } {
@@ -226,6 +241,18 @@ defineExpose({ fit, recentre })
             :stroke-width="(layer.active ? 1.5 : 1) / view.k"
           />
         </template>
+        <!-- Gatherables: their icons, under the cubes and pins. -->
+        <g v-for="layer in iconXY" :key="`icon-${layer.key}`">
+          <image
+            v-for="(p, i) in layer.xy"
+            :key="i"
+            :href="layer.icon"
+            :x="p[0] - iconPx / 2 / view.k"
+            :y="p[1] - iconPx / 2 / view.k"
+            :width="iconPx / view.k"
+            :height="iconPx / view.k"
+          ><title>{{ layer.name }}</title></image>
+        </g>
         <!-- Hidden Cubes: golden cubes. -->
         <g v-for="(c, i) in cubeXY" :key="`cube-${i}`" :transform="`translate(${c[0]} ${c[1]})`">
           <polygon :points="cubeFaces(9 / view.k).top" fill="#fde68a" stroke="#78350f" :stroke-width="1 / view.k" />

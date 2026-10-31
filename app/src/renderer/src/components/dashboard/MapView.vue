@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // Map: a zone's map with you on it (when you are in it), the Hidden Cubes in view, and the spawns
 // of the pets you care about: pinned ones and those around you each in their own colour, and,
-// optionally, every pet you still need in grey. Any zone can be picked; it opens on yours. The map
-// overlay's settings are below it.
+// optionally, every pet you still need in grey, and the gatherables (the ones pinned on the
+// Gatherables page, or all). Any zone can be picked; it opens on yours. Its switches are kept as they
+// were left (settings `mapPage`). The map overlay's settings are below it.
 import { computed, ref, watch } from 'vue'
 import Button from '@/components/Button.vue'
 import PetIcon from '@/components/PetIcon.vue'
@@ -13,6 +14,7 @@ import WorldMap, { type MapLayer } from '@/components/WorldMap.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Section from '@/components/ui/Section.vue'
 import SelectBox from '@/components/ui/SelectBox.vue'
+import { gatherLayers, useGatherables } from '@/lib/gatherables.ts'
 import { displayName } from '@/lib/petDb.ts'
 import { currentWorld, nearbyPets, useSpawns } from '@/lib/spawns.ts'
 import { plural, t } from '@/lib/i18n.ts'
@@ -40,8 +42,14 @@ const zones = computed(() =>
 )
 const inZone = computed(() => worldId.value !== null && worldId.value === here.value)
 
-const showNeeded = ref(false)
-const showCubes = ref(true)
+const page = computed(() => store.settings.mapPage)
+const setPage = (patch: Partial<typeof page.value>): void => void store.set('mapPage', { ...page.value, ...patch })
+const showNeeded = computed({ get: () => page.value.needed, set: (needed) => setPage({ needed }) })
+const showCubes = computed({ get: () => page.value.cubes, set: (cubes) => setPage({ cubes }) })
+const showGather = computed({ get: () => page.value.gatherables, set: (gatherables) => setPage({ gatherables }) })
+const gather = useGatherables()
+const icons = computed(() => (showGather.value ? gatherLayers(gather.value, worldId.value, store.settings.gatherables.pinned) : []))
+const gatherCount = computed(() => icons.value.length)
 
 const pet = (id: number) => store.pets.find((p) => p.id === id) ?? blankPet(id)
 /** The pets with spawns in this zone, from a list of ids. */
@@ -56,12 +64,13 @@ const tracked = computed(() => {
     .slice(0, PALETTE.length)
     .map((id, i) => ({ id, color: PALETTE[i]!, pinned: store.settings.hud.pinned.includes(id) }))
 })
-const hidden = ref(new Set<number>())
+/** Tracked pets whose spawns are hidden here (clicked off in the list). */
+const hidden = computed(() => new Set(page.value.hiddenPets))
 function flip(id: number): void {
   const next = new Set(hidden.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)
-  hidden.value = next
+  setPage({ hiddenPets: [...next] })
 }
 /** Every pet still below the cap with spawns here (not the tracked ones). */
 const needed = computed(() => {
@@ -133,6 +142,11 @@ const pct = (v: number): string => `${Math.round(v * 100)}%`
             <span class="flex items-center gap-2"><span class="size-2.5 rotate-45 bg-yellow" />Hidden Cubes</span>
             <Toggle v-model="showCubes" />
           </label>
+          <label class="flex items-center justify-between gap-2" :title="t('The ones pinned on the Gatherables page, or all of them while none is')">
+            <span class="flex items-center gap-2"><img :src="'gather/orichalcum-ore.webp'" alt="" class="size-3.5" />{{ t('Gatherables') }}</span>
+            <Toggle v-model="showGather" />
+          </label>
+          <p v-if="showGather && !gatherCount" class="text-xs text-darkest">{{ t('No gatherables known in this zone yet.') }}</p>
           <p v-if="showNeeded" class="text-xs text-darkest">{{ plural(needed.length, '{n} more pet drops souls in this zone.', '{n} more pets drop souls in this zone.') }}</p>
         </div>
         <div class="border-t border-card pt-3 text-xs text-darker">
@@ -143,7 +157,7 @@ const pct = (v: number): string => `${Math.round(v * 100)}%`
         </div>
       </aside>
       <div class="h-[calc(100vh-15rem)] min-h-[420px] overflow-hidden rounded-xl border border-card">
-        <WorldMap v-if="world" :world="world" :layers="layers" :focus="focus" :you="you" :cubes="cubes" />
+        <WorldMap v-if="world" :world="world" :layers="layers" :focus="focus" :you="you" :cubes="cubes" :icons="icons" />
         <div v-else class="flex h-full items-center justify-center text-sm text-darker">{{ t('Loading maps…') }}</div>
       </div>
     </div>
@@ -160,6 +174,9 @@ const pct = (v: number): string => `${Math.round(v * 100)}%`
       </SettingRow>
       <SettingRow v-if="mini.enabled" label="Opacity">
         <Slider :model-value="mini.opacity" :min="0.3" :max="1" :step="0.05" :format="pct" @update:model-value="setMini({ opacity: $event })" />
+      </SettingRow>
+      <SettingRow v-if="mini.enabled" label="Gatherables" hint="Ores, gemstones, logs and plants around you, as their icons: the ones pinned on the Gatherables page, or all of them while none is.">
+        <Toggle :model-value="mini.gatherables" @update:model-value="setMini({ gatherables: $event })" />
       </SettingRow>
     </Section>
   </div>

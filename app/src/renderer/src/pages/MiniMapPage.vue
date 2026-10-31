@@ -16,6 +16,7 @@ import WorldMap, { type MapLayer } from '@/components/WorldMap.vue'
 import { bridge } from '@/lib/bridge.ts'
 import { clampTo, cornerResize } from '@/lib/cornerResize.ts'
 import { plural, t } from '@/lib/i18n.ts'
+import { gatherLayers, useGatherables } from '@/lib/gatherables.ts'
 import { displayName } from '@/lib/petDb.ts'
 import { currentWorld, nearbyPets, useSpawns } from '@/lib/spawns.ts'
 import { windowDrag } from '@/lib/windowDrag.ts'
@@ -65,6 +66,9 @@ const layers = computed<MapLayer[]>(() =>
 /** The legend: the tracked pets (all with spawns in this zone). */
 const legend = tracked
 const cubes = computed(() => store.cubes.map((c) => c.position))
+/** Gatherables around you (Map page → Gatherables): the pinned ones, or all. */
+const gather = useGatherables()
+const icons = computed(() => (cfg.value.gatherables ? gatherLayers(gather.value, worldId.value, store.settings.gatherables.pinned) : []))
 /** Enemy players in view whose place is known: red pins (PvP page, Enemies nearby). */
 const enemyPins = computed(() =>
   store.settings.enemies.mapPins ? store.enemies.flatMap((e) => (e.position ? [{ name: e.name, position: e.position }] : [])) : [],
@@ -196,6 +200,7 @@ onBeforeUnmount(() => observer?.disconnect())
             :focus="NO_FOCUS"
             :you="store.nearby.position"
             :cubes="cubes"
+            :icons="icons"
             :enemies="enemyPins"
             :follow="cfg.zoom"
             :hint="false"

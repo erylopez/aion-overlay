@@ -15,6 +15,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       'The kill feed has a speaker button to mute or unmute the enemy sound.',"Enemies nearby reads players' PvP right: some with it off were marked PvP (and set off the sound), and a player switching it on in view is marked straight away.",
       'The DPS meter has a button to show or hide the My skills overlay.',
+      'Gatherables on the maps: ores, gemstones, logs and plants in Verteron and Altgard, as their icons, on the Map page and the map overlay (a switch on each). A new Gatherables page pins the ones you are after, so the maps show only those.',
+      'The Map page keeps its switches (Pets you still need, Hidden Cubes, the pets hidden) as you left them.',
       'Resizable map overlay: drag its bottom-right corner (double-click it for the default size). Hovering the map shows a slider for its opacity.',
       'Resizable DPS meter: drag its bottom-right corner (double-click it for the default size). It can also hide itself when no damage has come in for a while (15 s by default), in its settings on the Combat Meter page and in Settings.',
       "The Characters page: every character of your account with its class, level, gear score, combat power and portrait, and their Odyle Energy, Nightmare and Ascension Trial at a glance, read at each login and refilled on the game's schedule in between.",
