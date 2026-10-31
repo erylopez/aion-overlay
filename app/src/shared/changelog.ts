@@ -14,6 +14,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: '0.3.9',
     items: [
       'The kill feed has a speaker button to mute or unmute the enemy sound.',"Enemies nearby reads players' PvP right: some with it off were marked PvP (and set off the sound), and a player switching it on in view is marked straight away.",
+      "The Characters page: every character of your account with its class, level, gear score, combat power and portrait, and their Odyle Energy, Nightmare and Ascension Trial at a glance, read at each login and refilled on the game's schedule in between.",
       'What the game sends as you connect, before the overlay found its connection, is read too: nothing from the login is missed when the overlay opens with the game.'],
   },
   {

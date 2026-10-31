@@ -5,6 +5,7 @@
 import { app, session } from 'electron'
 import { DISPLAY_NAME } from '../shared/app.ts'
 import { broadcast } from './broadcast.ts'
+import { startCharacters } from './characters.ts'
 import { startFieldBosses } from './fieldBosses.ts'
 import { startHealthWatch } from './health.ts'
 import { registerIpc } from './ipc.ts'
@@ -43,6 +44,7 @@ if (!app.requestSingleInstanceLock()) {
     blockNetwork()
     startHealthWatch()
     startFieldBosses()
+    startCharacters()
     startLokthar()
     startOnTopWatch()
     registerIpc()

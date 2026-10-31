@@ -29,6 +29,8 @@ pub const OP_OBJECT_REMOVED: [u8; 2] = [0x35, 0x36];
 pub const OP_PLAYER_CARD: [u8; 2] = [0x30, 0x97];
 pub const OP_TARGET_INFO: [u8; 2] = [0x50, 0x36];
 pub const OP_PVP_SWITCH: [u8; 2] = [0x54, 0x36];
+pub const OP_CHARACTER_LIST: [u8; 2] = [0x15, 0x36];
+pub const OP_COUNTERS: [u8; 2] = [0x0B, 0x61];
 
 /// `42 36`'s flag for a monster killed in combat (1: out of range, 7: gone).
 pub const DEATH_FLAG_COMBAT: u32 = 3;
@@ -349,18 +351,130 @@ pub struct Character {
     pub entity: u32,
     pub name: String,
     pub server: u16,
+    /// The class number (`roster_class`), level and gear score, when they read as such.
+    pub class: Option<u32>,
+    pub level: Option<u32>,
+    pub gear_score: Option<u32>,
 }
 
-/// `33 36 <entity varint> <5 bytes> <len u8> <name> <server u16> ...`: you, on
-/// every zone entry (logins included, right after the collection).
+/// `33 36 <entity varint> <5 bytes> <len u8> <name> <server u16> <class u32> <u8> <level u32>
+/// <gear score u32> ...`: you, on every zone entry (logins included, right after the
+/// collection). Ksix 1406: class 6, Lv45, 2732 gear score (the owner's 2026-10-31 log; NCSoft's
+/// item level for her says 2732 too).
 pub fn character(frame: &[u8]) -> Option<Character> {
     let b = body(frame, OP_SELF)?;
     let (entity, pos) = varint(b, 0)?;
     (pos..(pos + 12).min(b.len())).find_map(|p| {
         let name = name_at(b, p)?;
         let end = p + 1 + name.len();
-        Some(Character { entity, server: u16_at(b, end)?, name })
+        let class = u32_at(b, end + 2).filter(|c| roster_class(*c).is_some());
+        let level = u32_at(b, end + 7).filter(|l| (1..=99).contains(l));
+        let gear_score = u32_at(b, end + 11).filter(|g| *g < 100_000);
+        let read = class.is_some() && level.is_some() && gear_score.is_some();
+        Some(Character {
+            entity,
+            server: u16_at(b, end)?,
+            name,
+            class: class.filter(|_| read),
+            level: level.filter(|_| read),
+            gear_score: gear_score.filter(|_| read),
+        })
     })
+}
+
+/// One character of the account, as the character selection screen lists them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListedCharacter {
+    pub name: String,
+    pub server: u16,
+    /// NCSoft's key for the character: `<server u16> 00 00 <number u32>`, as a u64. Their
+    /// portrait is `profileimg.plaync.com/...?gameServerKey=<server>&charKey=<key>`.
+    pub key: u64,
+    /// The class number (`roster_class`).
+    pub class: u32,
+    pub level: u32,
+    pub gear_score: u32,
+    pub legion: Option<String>,
+}
+
+/// `15 36 <u16> <u64 ms> <u64 ms> <count u8>`, then per character `<u32> <len><name> <class u32>
+/// <u8> <u8> <level u32> <4 bytes> <gear score u32> <20 bytes> <len><legion> ...` and its gear
+/// and looks, some 2.5 KB, with `<key u64> <u32> <u64 ms>` in the last part: the server's characters, as you
+/// pick the server (the owner's 2026-10-31 log, 5 characters on Ariel). A character is found
+/// where those fields read as such; its key is the first `<number u32> 00 00 <server u16>` after
+/// them with a time 4 bytes on.
+pub fn character_list(frame: &[u8]) -> Option<Vec<ListedCharacter>> {
+    let b = body(frame, OP_CHARACTER_LIST)?;
+    let count = *b.get(18)? as usize;
+    // Each character's place: its name, and where its fixed fields end.
+    let mut found: Vec<(usize, String, u32, u32, u32)> = Vec::new();
+    let mut at = 19;
+    while at + 40 < b.len() && found.len() < count {
+        let hit = name_at(b, at).and_then(|name| {
+            let end = at + 1 + name.len();
+            let class = u32_at(b, end)?;
+            let level = u32_at(b, end + 6)?;
+            let gear_score = u32_at(b, end + 14)?;
+            let ok = roster_class(class).is_some() && (1..=2).contains(b.get(end + 4)?) && (1..=99).contains(&level) && gear_score < 100_000;
+            ok.then_some((end, name, class, level, gear_score))
+        });
+        match hit {
+            Some(c) => {
+                at = c.0 + 38;
+                found.push(c);
+            }
+            None => at += 1,
+        }
+    }
+    if found.len() != count {
+        return None;
+    }
+    let mut out = Vec::with_capacity(count);
+    for (i, (end, name, class, level, gear_score)) in found.iter().enumerate() {
+        let stop = found.get(i + 1).map_or(b.len(), |n| n.0);
+        let key = (end + 38..stop.saturating_sub(8)).find_map(|k| {
+            let server = u16_at(b, k + 6)?;
+            let ok = (1000..=9999).contains(&server) && u16_at(b, k + 4)? == 0 && u32_at(b, k)? != 0 && plausible_ms(b, k + 12);
+            ok.then(|| (u64_at(b, k), server))
+        })?;
+        let legion = text(b, end + 38, 48).map(|(s, _)| s).filter(|s| s.chars().all(|c| !c.is_control()));
+        out.push(ListedCharacter { name: name.clone(), server: key.1, key: key.0?, class: *class, level: *level, gear_score: *gear_score, legion });
+    }
+    Some(out)
+}
+
+/// `0B 61 <count varint>`, then per counter `<flags u8> <id u32>` and its values: a u64 for each
+/// of flags 01 and 02, a varint for each of 04 and 08 (a value of 0 is left out, its flag
+/// clear). Your character's counters, at login: Odyle energy is 60000001 (basic, charged), the
+/// Shugo Festival keys 1 (the owner's 2026-10-31 logs, 73 counters).
+pub fn counters(frame: &[u8]) -> Option<Vec<(u32, Vec<u64>)>> {
+    let b = body(frame, OP_COUNTERS)?;
+    let (count, mut at) = varint(b, 0)?;
+    let mut out = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let flags = *b.get(at)?;
+        if flags & 0xF0 != 0 {
+            return None;
+        }
+        let id = u32_at(b, at + 1)?;
+        at += 5;
+        let mut values = Vec::new();
+        for bit in [0x01, 0x02] {
+            if flags & bit != 0 {
+                values.push(u64_at(b, at)?);
+                at += 8;
+            }
+        }
+        for bit in [0x04, 0x08] {
+            if flags & bit != 0 {
+                let (v, n) = varint(b, at)?;
+                values.push(v as u64);
+                at += n;
+            }
+        }
+        out.push((id, values));
+    }
+    (at == b.len()).then_some(out)
 }
 
 const KINA_ITEM: [u8; 4] = [0x3f, 0x33, 0x70, 0x37];
@@ -756,6 +870,48 @@ pub fn legion(frame: &[u8]) -> Option<(u32, String)> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_character_list_reads_every_character() {
+        let list = character_list(&frame(OP_CHARACTER_LIST, &hex(include_str!("testdata/character-list-ksix.hex")))).unwrap();
+        let rows: Vec<_> = list.iter().map(|c| (c.name.as_str(), c.server, roster_class(c.class).unwrap(), c.level, c.gear_score)).collect();
+        assert_eq!(
+            rows,
+            [
+                ("Ksix", 1406, "Gladiator", 45, 2732),
+                ("Ksixx", 1406, "Templar", 45, 1059),
+                ("Ksixxx", 1406, "Ranger", 45, 917),
+                ("Ksixxxx", 1406, "Spiritmaster", 45, 1096),
+                ("TremendoHeal", 1406, "Cleric", 45, 804),
+            ]
+        );
+        // NCSoft's keys for them, as their search and portraits have them.
+        assert_eq!(list[0].key, 395753817255410831);
+        assert_eq!(list[1].key, 395753817255417622);
+        assert_eq!(list[2].key, 395753817255465709);
+        assert_eq!(list[3].key, 395753817255486953);
+        assert_eq!(list[4].key, 395753817255505632);
+        assert_eq!(list[0].legion.as_deref(), Some("Lokthar"));
+        assert_eq!(list[1].legion.as_deref(), Some("Lokthar\u{30c3}"));
+    }
+
+    #[test]
+    fn the_counters_read_whole() {
+        let list = counters(&frame(OP_COUNTERS, &hex(include_str!("testdata/counters-ksix.hex")))).unwrap();
+        assert_eq!(list.len(), 73);
+        let get = |id: u32| list.iter().find(|(i, _)| *i == id).map(|(_, v)| v.clone());
+        assert_eq!(get(60_000_001), Some(vec![60, 155]), "Odyle energy, basic and charged");
+        assert_eq!(get(1), Some(vec![20]), "Shugo Festival keys");
+        assert_eq!(get(4), Some(vec![11]));
+        assert_eq!(get(9), Some(vec![25_200_000]));
+        assert_eq!(get(10_000_001), Some(vec![]));
+    }
+
+    #[test]
+    fn you_come_with_your_class_level_and_gear_score() {
+        let me = character(&frame(OP_SELF, &hex("c9445f81e32b37044b7369787e0506000000012d000000ac0a0000ac0a00002d000000"))).unwrap();
+        assert_eq!((me.name.as_str(), me.server, me.class, me.level, me.gear_score), ("Ksix", 1406, Some(6), Some(45), Some(2732)));
+    }
+
     fn hex(s: &str) -> Vec<u8> {
         let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
         (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
@@ -820,7 +976,7 @@ mod tests {
     #[test]
     fn the_character_record_names_you_and_your_server() {
         let f = frame(OP_SELF, &hex("a135 0000000000 04 4b736978 5004 ff"));
-        assert_eq!(character(&f), Some(Character { entity: 6817, name: "Ksix".into(), server: 1104 }));
+        assert_eq!(character(&f), Some(Character { entity: 6817, name: "Ksix".into(), server: 1104, class: None, level: None, gear_score: None }));
     }
 
     #[test]

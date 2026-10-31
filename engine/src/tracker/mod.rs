@@ -33,6 +33,8 @@ const COMBAT_EVERY_MS: i64 = 5000;
 /// The collection comes just before the record naming the character, in the
 /// same bundle: it waits this long for it, then goes to the one playing.
 const SYNC_WAIT_MS: i64 = 5000;
+/// How long the login's counters wait for the record naming the character (6 s in the owner's logs).
+const COUNTERS_WAIT_MS: i64 = 30_000;
 /// A player kill is passed on once per killer and victim in this long.
 const PVP_REPEAT_MS: i64 = 30_000;
 /// A cast's target this close to where you are is no news of where you are.
@@ -100,6 +102,11 @@ pub struct Tracker {
     last_combat: i64,
     /// The collection waiting for the record that names the character.
     pending_sync: Option<(i64, p::Collection)>,
+    /// The login's counters (`0B 61`), waiting for the record that names the character: they come
+    /// a few seconds before it.
+    pending_counters: Option<(i64, Vec<(u32, Vec<u64>)>)>,
+    /// Your class, level and gear score as last told to the app.
+    me_stats: Option<(String, u32, u32, u32)>,
     field_bosses: Option<(u32, Vec<p::FieldBoss>)>,
     /// When a field boss list last could not be read (logged at most once a minute).
     field_bosses_unread: i64,
@@ -173,6 +180,8 @@ impl Tracker {
             self_votes: HashMap::new(),
             last_combat: i64::MIN,
             pending_sync: None,
+            pending_counters: None,
+            me_stats: None,
             field_bosses: None,
             field_bosses_unread: 0,
             boss_messages: HashMap::new(),
@@ -592,6 +601,14 @@ impl Tracker {
                 self.sync(ts, &coll);
             }
         }
+        // Counters with no character record after them (not a login): the character playing.
+        if self.pending_counters.as_ref().is_some_and(|(at, _)| ts - at > COUNTERS_WAIT_MS) {
+            if let Some(name) = self.store.current.clone() {
+                let server = self.store.characters.get(&name).and_then(|c| c.server);
+                self.counters_read(ts, &name, server);
+            }
+            self.pending_counters = None;
+        }
         let Some(op) = p::opcode(f) else { return };
         // Looking for where else the game sends field bosses (the map's list comes at login, but
         // not always with the map open): any other message naming two of them is logged, once a
@@ -759,6 +776,27 @@ impl Tracker {
                 }
             }
             damage::OP_DAMAGE => self.damage(ts, f),
+            p::OP_CHARACTER_LIST => {
+                if let Some(list) = p::character_list(f) {
+                    let characters: Vec<_> = list
+                        .iter()
+                        .map(|c| {
+                            json!({
+                                // As text: NCSoft's keys are past what a JS number holds.
+                                "key": c.key.to_string(), "name": c.name, "server": c.server, "classId": c.class,
+                                "className": p::roster_class(c.class), "level": c.level, "gearScore": c.gear_score, "legion": c.legion,
+                            })
+                        })
+                        .collect();
+                    tracing::info!("character list: {}", list.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", "));
+                    (self.emit)(json!({ "type": "characterList", "ts": ts, "characters": characters }));
+                }
+            }
+            p::OP_COUNTERS => {
+                if let Some(list) = p::counters(f) {
+                    self.pending_counters = Some((ts, list));
+                }
+            }
             p::OP_PVP_SWITCH => {
                 if let Some((entity, on)) = p::pvp_switch(f) {
                     if let Some(player) = self.players.get_mut(&entity) {
@@ -877,9 +915,29 @@ impl Tracker {
                 "switched": old.is_some(), "pets": self.snapshot(),
             }));
         }
+        if let (Some(class), Some(level), Some(gear_score)) = (who.class, who.level, who.gear_score) {
+            let stats = (who.name.clone(), class, level, gear_score);
+            if self.me_stats.as_ref() != Some(&stats) {
+                (self.emit)(json!({
+                    "type": "me", "ts": ts, "name": who.name, "server": who.server, "classId": class,
+                    "className": p::roster_class(class), "level": level, "gearScore": gear_score,
+                }));
+                self.me_stats = Some(stats);
+            }
+        }
+        if self.pending_counters.is_some() {
+            self.counters_read(ts, &who.name, Some(who.server));
+        }
         if let Some((_, coll)) = self.pending_sync.take() {
             self.sync(ts, &coll);
         }
+    }
+
+    /// The login's counters, for `name`: by id, their values (the app knows which is which).
+    fn counters_read(&mut self, ts: i64, name: &str, server: Option<u16>) {
+        let Some((_, list)) = self.pending_counters.take() else { return };
+        let values: serde_json::Map<String, Value> = list.into_iter().map(|(id, v)| (id.to_string(), json!(v))).collect();
+        (self.emit)(json!({ "type": "counters", "ts": ts, "name": name, "server": server, "values": values }));
     }
 
     /// Entering the world sends the whole collection: the server's numbers for every pet.
@@ -1225,6 +1283,24 @@ mod tests {
 
     fn pet(t: &Tracker, id: u32) -> Pet {
         t.store.pets().and_then(|p| p.get(&id)).cloned().unwrap_or_default()
+    }
+
+    /// The login's counters come before the record naming the character: they are hers. With
+    /// no record after them, they are the character playing's.
+    #[test]
+    fn the_login_counters_go_to_the_character_logging_in() {
+        let (mut t, events) = tracker();
+        let counters = |energy: u8| frame(p::OP_COUNTERS, &[1, 0x0C, 0x01, 0x87, 0x93, 0x03, energy, 0x9B, 0x01]);
+        t.frame(1000, &character(5, "Ksix", 1104));
+        t.frame(2000, &counters(60));
+        assert!(!events.lock().unwrap().iter().any(|e| e["type"] == "counters"));
+        t.frame(8000, &character(6, "Ksixx", 1104));
+        t.frame(9000, &counters(45));
+        t.frame(9000 + COUNTERS_WAIT_MS + 1, &soul(&[(1006, 1)]));
+        let read: Vec<_> = events.lock().unwrap().iter().filter(|e| e["type"] == "counters").cloned().collect();
+        assert_eq!(read.len(), 2);
+        assert_eq!((read[0]["name"].as_str(), read[0]["values"]["60000001"].clone()), (Some("Ksixx"), json!([60, 155])));
+        assert_eq!((read[1]["name"].as_str(), read[1]["values"]["60000001"].clone()), (Some("Ksixx"), json!([45, 155])));
     }
 
     #[test]

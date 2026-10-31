@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises'
 import { dummy } from './dummy.ts'
 import { updater } from './updater.ts'
 import { meterState } from './meter.ts'
+import { characterStore } from './characters.ts'
 import { lokthar } from './lokthar.ts'
 import { packets } from './packets.ts'
 import { settings } from './settings.ts'
@@ -125,6 +126,8 @@ export function registerIpc(): void {
     if (Number.isInteger(pet) && typeof name === 'string' && name.trim()) tracker.setName(pet, name.trim().slice(0, 60))
   })
   handle('tracker:restart', () => tracker.restart())
+  handle('characters:get', () => characterStore.all())
+  handle('characters:forget', (id) => characterStore.forget(id))
   handle('lokthar:test', () => lokthar.test())
   handle('lokthar:sync', () => lokthar.syncNow())
   handle('lokthar:last', () => lokthar.last())

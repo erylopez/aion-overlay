@@ -9,6 +9,7 @@ import { MAX_LEVEL, NO_NEARBY, type Cube, type Enemy, type Nearby, type TargetPl
 import { kinaPerHour, kinaSeries, NO_KINA, type KinaSession } from '@shared/kina.ts'
 import type { FieldBosses, TimerAlert, TimerId } from '@shared/timers.ts'
 import type { Buff } from '@shared/buffs.ts'
+import type { Characters } from '@shared/characters.ts'
 import { bridge } from '@/lib/bridge.ts'
 import type { Genus } from '@/lib/petDb.ts'
 import type { Continent } from '@/lib/spawns.ts'
@@ -28,6 +29,8 @@ export const useApp = defineStore('app', () => {
   const alerting = ref<TimerAlert[]>([])
   /** The field bosses as the map last listed them (the Gartua timer). */
   const fieldBosses = ref<FieldBosses>({})
+  /** Your characters, with their counters at their last login (the Characters page). */
+  const characters = ref<Characters>({})
   /** Timers to scroll to and highlight in the Event Alerts and Field Bosses pages (the bubble was clicked on their alert). */
   const timerFocus = ref<{ ids: TimerId[]; at: number } | null>(null)
   /** The Black Cloud Merchant's stock: the tabs opened, until their restock. */
@@ -127,6 +130,7 @@ export const useApp = defineStore('app', () => {
     api.on('tracker:nearby', (n) => (nearby.value = n))
     api.on('tracker:shop', (s) => (shop.value = s))
     api.on('tracker:fieldBosses', (b) => (fieldBosses.value = b))
+    api.on('characters:changed', (c) => (characters.value = c))
     api.on('tracker:pvp', (k) => (pvp.value = k))
     api.on('tracker:cubes', (c) => (cubes.value = c))
     api.on('tracker:enemies', (e) => (enemies.value = e))
@@ -152,6 +156,7 @@ export const useApp = defineStore('app', () => {
     shop.value = t.shop
     kina.value = t.kina
     fieldBosses.value = t.fieldBosses
+    characters.value = await api.invoke('characters:get')
     alerting.value = await api.invoke('timers:get')
     buffs.value = await api.invoke('buffs:get')
     ready.value = true
@@ -183,7 +188,7 @@ export const useApp = defineStore('app', () => {
   }
 
   return {
-    settings, status, pets, toasts, fighting, collectionView, shop, kina, kinaRate, kinaTimeline, alerting, timerFocus, fieldBosses, pvp, cubes, enemies, target, buffs, hudEditing, panelVisible, ready, sessionSouls, recentPets, openPetId, nearby,
+    settings, status, pets, toasts, fighting, collectionView, shop, kina, kinaRate, kinaTimeline, alerting, timerFocus, fieldBosses, characters, pvp, cubes, enemies, target, buffs, hudEditing, panelVisible, ready, sessionSouls, recentPets, openPetId, nearby,
     init, set, setHud, togglePin, openPet, hiddenPet,
   }
 })
