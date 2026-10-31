@@ -16,4 +16,10 @@ export interface GameMapState {
    * being downloaded (once per zone; the shipped one is used meanwhile).
    */
   detail?: 'shipped' | 'loading' | 'ready'
+  /** How the last picture was placed: local, flow, near, zone; wait or error when it was not. */
+  mode?: string
+  /** The last thing that went wrong (capture, OpenCV), and when. */
+  error?: { at: number; text: string } | null
+  /** What the overlay sees, now and then: a small JPEG (Map V2 shows it). */
+  preview?: string | null
 }

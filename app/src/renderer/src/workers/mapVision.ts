@@ -458,6 +458,26 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
     return
   }
   const started = performance.now()
-  const out = ref ? match(msg.width, msg.height, msg.rgba, msg.player ?? null) : { matrix: null, inliers: 0, mode: 'wait' as const }
-  self.postMessage({ type: 'result', ...out, ms: Math.round(performance.now() - started) })
+  // Always answered: the page sends the next picture only once this one is, and a picture OpenCV
+  // threw on used to leave it waiting for good (the markers gone until the app restarted).
+  try {
+    const out = ref ? match(msg.width, msg.height, msg.rgba, msg.player ?? null) : { matrix: null, inliers: 0, mode: 'wait' as const }
+    self.postMessage({ type: 'result', ...out, ms: Math.round(performance.now() - started) })
+  } catch (err) {
+    last = null
+    flowRun = 0
+    self.postMessage({ type: 'result', matrix: null, inliers: 0, mode: 'error', ms: Math.round(performance.now() - started), error: errorText(err) })
+  }
+}
+
+/** OpenCV.js throws its C++ exceptions as numbers: their message. */
+function errorText(err: unknown): string {
+  if (typeof err === 'number' && cv?.exceptionFromPtr) {
+    try {
+      return `OpenCV: ${cv.exceptionFromPtr(err).msg}`
+    } catch {
+      return `OpenCV error ${err}`
+    }
+  }
+  return String(err)
 }

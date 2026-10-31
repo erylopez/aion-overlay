@@ -33,6 +33,22 @@ const DETAIL: Record<NonNullable<GameMapState['detail']>, string> = {
   ready: 'Detailed map',
 }
 
+/** How the last picture was placed, in words. */
+const MODE: Record<string, string> = {
+  local: 'Following the map',
+  flow: 'Carried by its movement',
+  near: 'Found around you',
+  zone: 'Found in the zone',
+  wait: 'Looking for it',
+  error: 'Error',
+}
+const errorAgo = computed(() => {
+  const e = state.value.error
+  if (!e) return null
+  const s = Math.max(0, Math.round((Date.now() - e.at) / 1000))
+  return s < 60 ? t('{n} s ago', { n: s }) : t('{n} min ago', { n: Math.round(s / 60) })
+})
+
 // Restart: the overlay comes back in a second or so; the button waits that long.
 const restarting = ref(false)
 async function restart(): Promise<void> {
@@ -108,6 +124,29 @@ const STEPS = [
           {{ t('Restart') }}
         </Button>
       </SettingRow>
+    </Section>
+
+    <Section v-if="ready" title="What the overlay sees" icon="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8zM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z">
+      <div class="flex gap-4 py-3">
+        <div class="flex size-[180px] shrink-0 items-center justify-center overflow-hidden rounded-lg border border-card bg-dark">
+          <img v-if="state.preview" :src="state.preview" alt="" class="max-h-full max-w-full" draggable="false" />
+          <span v-else class="px-3 text-center text-xs text-darkest">{{ t('Nothing yet: is the game open, with the markers on?') }}</span>
+        </div>
+        <dl class="grid min-w-0 flex-1 grid-cols-[auto_1fr] content-start gap-x-4 gap-y-1.5 text-sm">
+          <dt class="text-darker">{{ t('Now') }}</dt>
+          <dd>{{ state.mode ? t(MODE[state.mode] ?? state.mode) : '–' }}</dd>
+          <dt class="text-darker">{{ t('Points that agree') }}</dt>
+          <dd class="tabular-nums">{{ state.inliers || '–' }}</dd>
+          <dt class="text-darker">{{ t('Time per picture') }}</dt>
+          <dd class="tabular-nums">{{ state.ms ? `${state.ms} ms` : '–' }}</dd>
+          <dt class="text-darker">{{ t('Last problem') }}</dt>
+          <dd :class="state.error ? 'text-danger' : 'text-darkest'">
+            <template v-if="state.error">{{ state.error.text }} <span class="text-darker">· {{ errorAgo }}</span></template>
+            <template v-else>{{ t('none') }}</template>
+          </dd>
+        </dl>
+      </div>
+      <p class="pb-3 text-xs text-darker">{{ t("If the picture is not the game's map (black, another part of the screen), pick its place again. If it is the map and nothing matches, send it with the log (Settings → Engine).") }}</p>
     </Section>
 
     <Section v-if="ready" title="What to draw" icon="M8 1.5 9.8 6l4.7.4-3.6 3 1.1 4.6L8 11.6 4 14l1.1-4.6-3.6-3L6.2 6z">

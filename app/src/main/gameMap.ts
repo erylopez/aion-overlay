@@ -144,8 +144,13 @@ export const gameMap = {
 
   /** What the overlay's page last said about the game's map (shown on the Map page). */
   report(next: GameMapState): void {
-    if (next.status !== state.status || next.world !== state.world || next.detail !== state.detail || Math.abs(next.inliers - state.inliers) > 3) setState(next)
-    else state = next
+    // Kept for the log: what changed, and what went wrong (each error once).
+    if (next.status !== state.status || next.detail !== state.detail) log(`game map: ${next.status}, ${next.detail ?? '?'} map${next.world ? `, zone ${next.world}` : ''}`)
+    if (next.error && next.error.at !== state.error?.at) log(`game map: ${next.error.text}`)
+    const merged = { ...next, preview: next.preview === undefined ? state.preview : next.preview }
+    const changed = next.status !== state.status || next.world !== state.world || next.detail !== state.detail || next.mode !== state.mode || next.error?.at !== state.error?.at || Math.abs(next.inliers - state.inliers) > 3
+    if (changed || next.preview !== undefined) setState(merged)
+    else state = merged
   },
 }
 

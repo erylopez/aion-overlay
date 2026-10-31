@@ -16,6 +16,8 @@ import type { GameMapState } from '@shared/gameMap.ts'
 const FRAME_MS = 120
 /** And made at most this big across (the match needs no more). */
 const PICTURE_PX = 720
+/** A picture the worker has not answered in this long is given up on (it never should). */
+const WAIT_MS = 5_000
 /** A match older than this: the map is gone (closed, or the game hidden). */
 const STALE_MS = 900
 const PALETTE = ['#f76b15', '#30a46c', '#0090ff', '#e54666', '#12a594', '#ab4aba', '#8e8c99', '#ffffff']
@@ -43,8 +45,16 @@ const detail = ref<'shipped' | 'loading' | 'ready'>('shipped')
 /** The last match, zone map pixels → this window's CSS pixels, and when it was made. */
 const placed = ref<{ m: number[]; at: number } | null>(null)
 let busy = false
+/** When the picture in flight was sent: one not answered in WAIT_MS is given up on. */
+let sentAt = 0
 let lastInliers = 0
 let lastMs = 0
+let lastMode = ''
+/** The last thing that went wrong, for Map V2 and the log. */
+const lastError = ref<{ at: number; text: string } | null>(null)
+function fail(text: string): void {
+  lastError.value = { at: Date.now(), text }
+}
 /** Window CSS pixels per picture pixel, for the picture in flight. */
 let cssPerPicture = 1
 
@@ -62,8 +72,11 @@ worker.onmessage = (e: MessageEvent): void => {
     return
   }
   busy = false
+  sentAt = 0
   lastInliers = msg.inliers
   lastMs = msg.ms
+  lastMode = msg.mode
+  if (msg.error) fail(msg.error)
   if (msg.matrix) {
     const k = cssPerPicture
     const [a, b, c, d, e2, f] = msg.matrix as number[]
@@ -108,15 +121,41 @@ const picture = new OffscreenCanvas(1, 1)
 const pictureCtx = picture.getContext('2d', { willReadFrequently: true })!
 
 async function startCapture(): Promise<void> {
+  for (const track of stream?.getTracks() ?? []) track.stop()
   display = await api.invoke('gamemap:display')
   stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 10 }, audio: false })
+  // The screen capture can end under us (a display or resolution change): start it again.
+  stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+    fail('the screen capture ended: starting it again')
+    setTimeout(() => void startCapture().catch((err: unknown) => fail(`no screen capture: ${String(err)}`)), 1000)
+  })
   video.srcObject = stream
   await video.play()
+}
+
+/** A small JPEG of what the overlay sees, for Map V2 (now and then). */
+const thumb = new OffscreenCanvas(1, 1)
+let preview: string | null = null
+async function makePreview(): Promise<void> {
+  if (!picture.width || picture.width < 2) return
+  const k = Math.min(1, 220 / Math.max(picture.width, picture.height))
+  thumb.width = Math.round(picture.width * k)
+  thumb.height = Math.round(picture.height * k)
+  thumb.getContext('2d')!.drawImage(picture, 0, 0, thumb.width, thumb.height)
+  const blob = await thumb.convertToBlob({ type: 'image/jpeg', quality: 0.7 })
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let bin = ''
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!)
+  preview = `data:image/jpeg;base64,${btoa(bin)}`
 }
 
 /** This part of the screen, as a picture for the worker. */
 function snap(): void {
   const region = cfg.value.region
+  if (busy && Date.now() - sentAt > WAIT_MS) {
+    fail('the worker did not answer: going on without it')
+    busy = false
+  }
   if (busy || !reference.value || !display || !region || !video.videoWidth) return
   const perDip = video.videoWidth / display.bounds.width
   const sx = (region.x - display.bounds.x) * perDip
@@ -134,6 +173,7 @@ function snap(): void {
   const data = pictureCtx.getImageData(0, 0, w, h).data
   cssPerPicture = region.width / w
   busy = true
+  sentAt = Date.now()
   // Where you are on the zone map: a lost map is looked for around you first (it opens on you).
   const pos = store.nearby.position
   const ref = reference.value
@@ -277,12 +317,18 @@ function report(): void {
     inliers: found.value ? lastInliers : 0,
     ms: lastMs,
     detail: detail.value,
+    mode: lastMode,
+    error: lastError.value,
   }
   const key = JSON.stringify(state)
-  if (key === reported) return
+  // The preview goes along once a second; the rest whenever it changes.
+  const withPreview = Date.now() - previewAt >= 1000
+  if (key === reported && !withPreview) return
   reported = key
-  void api.invoke('gamemap:report', state)
+  if (withPreview) previewAt = Date.now()
+  void api.invoke('gamemap:report', withPreview ? { ...state, preview } : state)
 }
+let previewAt = 0
 
 let snapTimer: ReturnType<typeof setInterval> | null = null
 let tickTimer: ReturnType<typeof setInterval> | null = null
@@ -290,9 +336,10 @@ onMounted(() => {
   snapTimer = setInterval(snap, FRAME_MS)
   tickTimer = setInterval(() => {
     now.value = Date.now()
+    if (Date.now() - previewAt >= 1000) void makePreview().catch(() => undefined)
     report()
   }, 250)
-  startCapture().catch((err: unknown) => void api.invoke('gamemap:report', { status: 'searching', world: null, inliers: 0, ms: 0, error: String(err) } as GameMapState))
+  startCapture().catch((err: unknown) => fail(`no screen capture: ${String(err)}`))
 })
 onBeforeUnmount(() => {
   if (snapTimer) clearInterval(snapTimer)
