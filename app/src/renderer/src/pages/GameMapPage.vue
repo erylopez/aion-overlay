@@ -54,7 +54,13 @@ let lastMode = ''
 const lastError = ref<{ at: number; text: string } | null>(null)
 function fail(text: string): void {
   lastError.value = { at: Date.now(), text }
+  note(text)
 }
+/** A line for the map log (main/gameMapLog.ts). */
+const note = (line: string): void => void api.invoke('gamemap:log', line)
+/** The screen capture's state, and the pictures taken (Map V2 shows them). */
+const capture = ref<'starting' | 'on' | 'failed'>('starting')
+let pictures = 0
 /** Window CSS pixels per picture pixel, for the picture in flight. */
 let cssPerPicture = 1
 
@@ -62,12 +68,14 @@ worker.onmessage = (e: MessageEvent): void => {
   const msg = e.data
   if (msg.type === 'reference') {
     reference.value = msg.error ? null : { key: msg.key, width: msg.width, height: msg.height, detail: !!msg.detail }
+    note(msg.error ? `zone map ${msg.key} not loaded: ${msg.error}` : `zone map ${msg.key} ${msg.detail ? 'detail' : 'basic'} ready, ${msg.width}x${msg.height}`)
     if (msg.detail) detail.value = 'ready'
     else if (!msg.error) void loadDetail(msg.key)
     return
   }
   if (msg.type === 'features') return void api.invoke('gamemap:saveFeatures', msg.key, msg.data)
   if (msg.type === 'detailError') {
+    note(`zone map ${msg.key} detail not made: ${msg.error}`)
     detail.value = 'shipped'
     return
   }
@@ -76,6 +84,7 @@ worker.onmessage = (e: MessageEvent): void => {
   lastInliers = msg.inliers
   lastMs = msg.ms
   lastMode = msg.mode
+  modes.set(msg.mode, (modes.get(msg.mode) ?? 0) + 1)
   if (msg.error) fail(msg.error)
   if (msg.matrix) {
     const k = cssPerPicture
@@ -120,17 +129,45 @@ let display: { bounds: { x: number; y: number; width: number; height: number }; 
 const picture = new OffscreenCanvas(1, 1)
 const pictureCtx = picture.getContext('2d', { willReadFrequently: true })!
 
+/** A step that never ends (Windows not answering the capture request) is given up on. */
+function within<T>(ms: number, what: string, job: Promise<T>): Promise<T> {
+  return Promise.race([job, new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${what}: no answer in ${ms / 1000} s`)), ms))])
+}
+
 async function startCapture(): Promise<void> {
+  capture.value = 'starting'
   for (const track of stream?.getTracks() ?? []) track.stop()
   display = await api.invoke('gamemap:display')
-  stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 10 }, audio: false })
+  const region = cfg.value.region
+  note(
+    `capture: asking for the screen; region ${region ? `${region.width}x${region.height} at ${region.x},${region.y}` : 'none'}, ` +
+      `display ${display ? `${display.bounds.width}x${display.bounds.height} at ${display.bounds.x},${display.bounds.y}, ${display.scaleFactor * 100}%` : 'none'}, window ${window.innerWidth}x${window.innerHeight} at ${window.devicePixelRatio * 100}%`,
+  )
+  stream = await within(8_000, 'the screen capture request', navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 10 }, audio: false }))
+  const track = stream.getVideoTracks()[0]
+  const s = track?.getSettings()
+  note(`capture: got the screen, ${s?.width ?? '?'}x${s?.height ?? '?'} at ${s?.frameRate ?? '?'} fps ("${track?.label ?? '?'}")`)
   // The screen capture can end under us (a display or resolution change): start it again.
-  stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+  track?.addEventListener('ended', () => {
+    capture.value = 'failed'
     fail('the screen capture ended: starting it again')
-    setTimeout(() => void startCapture().catch((err: unknown) => fail(`no screen capture: ${String(err)}`)), 1000)
+    setTimeout(() => void retryCapture(), 1000)
   })
   video.srcObject = stream
-  await video.play()
+  await within(5_000, 'playing the screen capture', video.play())
+  note(`capture: playing, video ${video.videoWidth}x${video.videoHeight}`)
+  capture.value = 'on'
+}
+
+/** Start the capture; failed, try again in a while (logged each time). */
+async function retryCapture(): Promise<void> {
+  try {
+    await startCapture()
+  } catch (err) {
+    capture.value = 'failed'
+    fail(`no screen capture: ${String(err)}`)
+    setTimeout(() => void retryCapture(), 10_000)
+  }
 }
 
 /** A small JPEG of what the overlay sees, for Map V2 (now and then). */
@@ -170,6 +207,7 @@ function snap(): void {
     picture.height = h
   }
   pictureCtx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h)
+  if (!pictures++) note(`first picture: ${w}x${h} from ${Math.round(sw)}x${Math.round(sh)} at ${Math.round(sx)},${Math.round(sy)} of the ${video.videoWidth}x${video.videoHeight} screen`)
   const data = pictureCtx.getImageData(0, 0, w, h).data
   cssPerPicture = region.width / w
   busy = true
@@ -225,6 +263,21 @@ function draw(): void {
   const ctx = el.getContext('2d')!
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, W, H)
+  // The part of the screen watched (Map V2 → Show the watched area): to see it lies on the map.
+  if (cfg.value.showArea) {
+    ctx.setLineDash([8, 5])
+    ctx.lineWidth = 2
+    ctx.strokeStyle = found.value ? '#30a46c' : '#3b82f6'
+    ctx.strokeRect(1, 1, W - 2, H - 2)
+    ctx.setLineDash([])
+    ctx.font = '600 11px Inter Variable, Segoe UI, sans-serif'
+    ctx.textAlign = 'left'
+    const label = `${W}×${H} · ${found.value ? 'map found' : capture.value === 'on' ? 'looking' : `capture ${capture.value}`}`
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'
+    ctx.fillRect(4, 4, ctx.measureText(label).width + 10, 18)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText(label, 9, 17)
+  }
   const w = world.value
   const r = reference.value
   if (!found.value || !w || !r || r.key !== w.key) return
@@ -305,7 +358,7 @@ function draw(): void {
     }
   }
 }
-watch([placed, found, gatherables, pets, () => store.cubes, () => store.enemies, cfg], draw, { deep: true })
+watch([placed, found, gatherables, pets, () => store.cubes, () => store.enemies, cfg, capture], draw, { deep: true })
 
 // ---- the loop, and what the Map page shows ------------------------------------------------------
 
@@ -319,6 +372,8 @@ function report(): void {
     detail: detail.value,
     mode: lastMode,
     error: lastError.value,
+    capture: capture.value,
+    pictures,
   }
   const key = JSON.stringify(state)
   // The preview goes along once a second; the rest whenever it changes.
@@ -330,6 +385,15 @@ function report(): void {
 }
 let previewAt = 0
 
+/** Once a minute in the map log: how it went. */
+const modes = new Map<string, number>()
+let statsTimer: ReturnType<typeof setInterval> | null = null
+function logStats(): void {
+  const list = [...modes.entries()].map(([m, n]) => `${m} ${n}`).join(', ')
+  note(`last minute: ${list || 'no pictures'}; capture ${capture.value}, ${detail.value} map, zone ${worldId.value ?? '?'}`)
+  modes.clear()
+}
+
 let snapTimer: ReturnType<typeof setInterval> | null = null
 let tickTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
@@ -339,10 +403,25 @@ onMounted(() => {
     if (Date.now() - previewAt >= 1000) void makePreview().catch(() => undefined)
     report()
   }, 250)
-  startCapture().catch((err: unknown) => fail(`no screen capture: ${String(err)}`))
+  note(`overlay opened (${window.innerWidth}x${window.innerHeight})`)
+  // Once the settings are in: the region is the overlay's own, and the log should say which.
+  const start = (): void => void retryCapture()
+  if (store.ready) start()
+  else {
+    const stop = watch(
+      () => store.ready,
+      (ok) => {
+        if (!ok) return
+        stop()
+        start()
+      },
+    )
+  }
+  statsTimer = setInterval(logStats, 60_000)
 })
 onBeforeUnmount(() => {
   if (snapTimer) clearInterval(snapTimer)
+  if (statsTimer) clearInterval(statsTimer)
   if (tickTimer) clearInterval(tickTimer)
   for (const track of stream?.getTracks() ?? []) track.stop()
   worker.terminate()

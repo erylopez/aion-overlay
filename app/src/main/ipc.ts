@@ -129,12 +129,16 @@ export function registerIpc(): void {
   })
   handle('tracker:restart', () => tracker.restart())
   handle('gamemap:pick', () => gameMap.pick())
-  handle('gamemap:setRegion', (box) => gameMap.setRegion(box && isPoint({ x: box.width, y: box.height }) && isPoint(box) ? box : null))
+  handle('gamemap:setRegion', (box, view) =>
+    gameMap.setRegion(box && isPoint({ x: box.width, y: box.height }) && isPoint(box) ? box : null, view && isPoint({ x: view.width, y: view.height }) ? view : null),
+  )
   handle('gamemap:report', (state) => {
     if (state && typeof state.status === 'string') gameMap.report(state)
   })
   handle('gamemap:get', () => gameMap.state())
   handle('gamemap:restart', () => gameMap.restart())
+  handle('gamemap:log', (line) => gameMap.log(String(line)))
+  handle('gamemap:openLog', () => gameMap.openLog())
   handle('gamemap:display', () => regionDisplay())
   handle('gamemap:detail', (key, cols, rows) => mapDetail.get(String(key), Number(cols), Number(rows)))
   handle('gamemap:saveFeatures', (key, data) => mapDetail.saveFeatures(String(key), data))

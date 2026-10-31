@@ -29,10 +29,13 @@ export interface InvokeChannels {
   /** Markers on the game's map: drag a box around it (opens the picker). */
   'gamemap:pick': { args: []; result: void }
   /** From the picker: the box dragged, in its own coordinates; null when cancelled. */
-  'gamemap:setRegion': { args: [box: Rect | null]; result: void }
+  'gamemap:setRegion': { args: [box: Rect | null, view?: { width: number; height: number }]; result: void }
   /** From the overlay: how the search for the game's map is going. */
   'gamemap:report': { args: [state: GameMapState]; result: void }
   'gamemap:get': { args: []; result: GameMapState }
+  /** A line from the game map's overlay for its log; and that log, opened. */
+  'gamemap:log': { args: [line: string]; result: void }
+  'gamemap:openLog': { args: []; result: void }
   /** Start the markers on the game's map over: a new screen capture and a new search. */
   'gamemap:restart': { args: []; result: void }
   /** A zone's map at full detail (downloaded once, then kept): its keypoints, or its tiles; null while it cannot be had. */
@@ -242,7 +245,7 @@ export interface Bridge {
 export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'app:info', 'app:quit', 'app:openPath',
   'settings:all', 'settings:set',
-  'tracker:get', 'gamemap:pick', 'gamemap:setRegion', 'gamemap:report', 'gamemap:get', 'gamemap:restart', 'gamemap:detail', 'gamemap:saveFeatures', 'gamemap:display', 'characters:get', 'characters:refresh', 'characters:forget', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession', 'tracker:clearPvp',
+  'tracker:get', 'gamemap:pick', 'gamemap:setRegion', 'gamemap:report', 'gamemap:get', 'gamemap:log', 'gamemap:openLog', 'gamemap:restart', 'gamemap:detail', 'gamemap:saveFeatures', 'gamemap:display', 'characters:get', 'characters:refresh', 'characters:forget', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession', 'tracker:clearPvp',
   'killfeed:open', 'killfeed:close', 'killfeed:moveTo', 'killfeed:dragEnd', 'killfeed:resize',
   'timerbar:moveTo', 'timerbar:dragEnd', 'timerbar:resize',
   'bubble:moveTo', 'bubble:dragEnd', 'panel:toggle', 'panel:hide', 'panel:minimize', 'panel:maximize',

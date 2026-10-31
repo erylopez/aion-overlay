@@ -42,6 +42,11 @@ const MODE: Record<string, string> = {
   wait: 'Looking for it',
   error: 'Error',
 }
+const CAPTURE: Record<NonNullable<GameMapState['capture']>, string> = {
+  starting: 'Starting…',
+  on: 'Capturing',
+  failed: 'Failed (see the map log)',
+}
 const errorAgo = computed(() => {
   const e = state.value.error
   if (!e) return null
@@ -114,6 +119,9 @@ const STEPS = [
       <SettingRow label="Show markers on the game's map">
         <Toggle :model-value="ready" :disabled="!game.region" @update:model-value="setGame({ enabled: $event })" />
       </SettingRow>
+      <SettingRow v-if="ready" label="Show the watched area" hint="A dashed border around the part of the screen the overlay watches, to check it lies on the game's map: blue while looking, green once the map is found.">
+        <Toggle :model-value="game.showArea" @update:model-value="setGame({ showArea: $event })" />
+      </SettingRow>
       <SettingRow
         v-if="ready"
         label="Stopped following the map?"
@@ -133,6 +141,10 @@ const STEPS = [
           <span v-else class="px-3 text-center text-xs text-darkest">{{ t('Nothing yet: is the game open, with the markers on?') }}</span>
         </div>
         <dl class="grid min-w-0 flex-1 grid-cols-[auto_1fr] content-start gap-x-4 gap-y-1.5 text-sm">
+          <dt class="text-darker">{{ t('Screen capture') }}</dt>
+          <dd :class="state.capture === 'failed' ? 'text-danger' : state.capture === 'on' ? 'text-green' : ''">
+            {{ state.capture ? t(CAPTURE[state.capture]) : '–' }}<span v-if="state.pictures" class="text-darker"> · {{ t('{n} pictures', { n: state.pictures }) }}</span>
+          </dd>
           <dt class="text-darker">{{ t('Now') }}</dt>
           <dd>{{ state.mode ? t(MODE[state.mode] ?? state.mode) : '–' }}</dd>
           <dt class="text-darker">{{ t('Points that agree') }}</dt>
@@ -146,7 +158,15 @@ const STEPS = [
           </dd>
         </dl>
       </div>
-      <p class="pb-3 text-xs text-darker">{{ t("If the picture is not the game's map (black, another part of the screen), pick its place again. If it is the map and nothing matches, send it with the log (Settings → Engine).") }}</p>
+      <div class="flex items-center gap-4 border-t border-card py-3">
+        <p class="min-w-0 flex-1 text-xs text-darker">
+          {{ t("If the picture is not the game's map (black, another part of the screen), pick its place again. If it is the map and nothing matches, or the screen capture fails, send the map log.") }}
+        </p>
+        <Button size="sm" @click="api.invoke('gamemap:openLog')">
+          <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L12.5 4.5v10H4zM9 1.5v3.5h3.5M6 8h4.5M6 10.5h4.5" /></svg>
+          {{ t('Open the map log') }}
+        </Button>
+      </div>
     </Section>
 
     <Section v-if="ready" title="What to draw" icon="M8 1.5 9.8 6l4.7.4-3.6 3 1.1 4.6L8 11.6 4 14l1.1-4.6-3.6-3L6.2 6z">

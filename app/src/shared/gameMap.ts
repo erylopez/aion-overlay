@@ -20,6 +20,10 @@ export interface GameMapState {
   mode?: string
   /** The last thing that went wrong (capture, OpenCV), and when. */
   error?: { at: number; text: string } | null
+  /** The screen capture: being started, running, or not to be had (see the map log). */
+  capture?: 'starting' | 'on' | 'failed'
+  /** Pictures taken since the overlay opened. */
+  pictures?: number
   /** What the overlay sees, now and then: a small JPEG (Map V2 shows it). */
   preview?: string | null
 }

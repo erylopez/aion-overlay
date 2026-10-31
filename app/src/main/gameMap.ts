@@ -9,11 +9,11 @@
  * The approach (capture a region, match it against the zone's map image, draw over it) is
  * problem-xyz's Aion 2 - Map Overlay's, with the author's leave; the code is this app's own.
  */
-import { BrowserWindow, desktopCapturer, screen, session } from 'electron'
+import { BrowserWindow, desktopCapturer, screen, session, shell } from 'electron'
 import { join } from 'node:path'
 import { broadcast } from './broadcast.ts'
 import { settings } from './settings.ts'
-import { log } from './tracker.ts'
+import { gameMapLogPath, glog } from './gameMapLog.ts'
 import { load } from './windows.ts'
 import type { GameMapState } from '../shared/gameMap.ts'
 import type { Rect } from '../shared/settings.ts'
@@ -67,12 +67,17 @@ function createOverlay(): void {
   win.setIgnoreMouseEvents(true)
   // Never in the picture it matches (nor in recordings).
   win.setContentProtection(true)
-  win.once('ready-to-show', () => alive(win) && win.showInactive())
+  win.once('ready-to-show', () => {
+    if (!alive(win)) return
+    win.showInactive()
+    const b = win.getBounds()
+    if (b.x !== region.x || b.y !== region.y || b.width !== region.width || b.height !== region.height) glog(`overlay window is ${b.width}x${b.height} at ${b.x},${b.y}, not where asked`)
+  })
   win.on('closed', () => {
     if (overlay === win) overlay = null
   })
   load(win, 'gamemap')
-  log(`game map: watching ${region.width}x${region.height} at ${region.x},${region.y}`)
+  glog(`watching ${region.width}x${region.height} at ${region.x},${region.y}`)
 }
 
 function closeOverlay(): void {
@@ -93,6 +98,10 @@ export const gameMap = {
   pick(): void {
     if (alive(picker)) return picker.focus()
     const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+    glog(
+      `picking on display ${d.id} ${d.bounds.width}x${d.bounds.height} at ${d.bounds.x},${d.bounds.y}, ${d.scaleFactor * 100}% ` +
+        `(displays: ${screen.getAllDisplays().map((x) => `${x.id} ${x.bounds.width}x${x.bounds.height} at ${x.bounds.x},${x.bounds.y} ${x.scaleFactor * 100}%`).join('; ')})`,
+    )
     const win = new BrowserWindow({
       ...d.bounds,
       show: false,
@@ -120,13 +129,27 @@ export const gameMap = {
   },
 
   /** The box dragged on the picker, in its own coordinates; null when it was cancelled. */
-  setRegion(box: Rect | null): void {
+  setRegion(box: Rect | null, view: { width: number; height: number } | null = null): void {
     const origin = alive(picker) ? picker.getBounds() : null
     if (alive(picker)) picker.destroy()
     picker = null
     if (!box || !origin) return
-    const region = { x: origin.x + Math.round(box.x), y: origin.y + Math.round(box.y), width: Math.round(box.width), height: Math.round(box.height) }
-    log(`game map: region ${region.width}x${region.height} at ${region.x},${region.y}`)
+    // The box is in the picker page's pixels: scaled by how big the page really was against the
+    // window (they differ when Windows sizes the window otherwise than asked, on a scaled display).
+    const kx = view && view.width > 0 ? origin.width / view.width : 1
+    const ky = view && view.height > 0 ? origin.height / view.height : 1
+    const region = {
+      x: Math.round(origin.x + box.x * kx),
+      y: Math.round(origin.y + box.y * ky),
+      width: Math.round(box.width * kx),
+      height: Math.round(box.height * ky),
+    }
+    const d = screen.getDisplayMatching(region)
+    glog(
+      `region ${region.width}x${region.height} at ${region.x},${region.y}: box ${Math.round(box.width)}x${Math.round(box.height)} at ${Math.round(box.x)},${Math.round(box.y)} ` +
+        `on the picker ${origin.width}x${origin.height} at ${origin.x},${origin.y} (page ${view ? `${view.width}x${view.height}` : '?'}), ` +
+        `display ${d.id} ${d.bounds.width}x${d.bounds.height} at ${d.bounds.x},${d.bounds.y}, ${d.scaleFactor * 100}%`,
+    )
     closeOverlay()
     settings.set('gameMap', { ...settings.get('gameMap'), region, enabled: true })
     createOverlay()
@@ -137,18 +160,29 @@ export const gameMap = {
    * scratch. The zone's detail is kept, so this takes a second or so.
    */
   restart(): void {
-    log('game map: restarted by hand')
+    glog('restarted by hand')
     closeOverlay()
     createOverlay()
+  },
+
+  /** A line from the overlay's page for the map log. */
+  log(line: string): void {
+    glog(`overlay: ${line.slice(0, 500)}`)
+  },
+
+  /** The map log, opened in the text editor. */
+  openLog(): void {
+    glog('log opened from Map V2')
+    void shell.openPath(gameMapLogPath())
   },
 
   /** What the overlay's page last said about the game's map (shown on the Map page). */
   report(next: GameMapState): void {
     // Kept for the log: what changed, and what went wrong (each error once).
-    if (next.status !== state.status || next.detail !== state.detail) log(`game map: ${next.status}, ${next.detail ?? '?'} map${next.world ? `, zone ${next.world}` : ''}`)
-    if (next.error && next.error.at !== state.error?.at) log(`game map: ${next.error.text}`)
+    if (next.status !== state.status || next.detail !== state.detail || next.capture !== state.capture) glog(`${next.status}, capture ${next.capture ?? '?'}, ${next.detail ?? '?'} map${next.world ? `, zone ${next.world}` : ''}`)
+    if (next.error && next.error.at !== state.error?.at) glog(`${next.error.text}`)
     const merged = { ...next, preview: next.preview === undefined ? state.preview : next.preview }
-    const changed = next.status !== state.status || next.world !== state.world || next.detail !== state.detail || next.mode !== state.mode || next.error?.at !== state.error?.at || Math.abs(next.inliers - state.inliers) > 3
+    const changed = next.status !== state.status || next.world !== state.world || next.detail !== state.detail || next.mode !== state.mode || next.capture !== state.capture || next.error?.at !== state.error?.at || Math.abs(next.inliers - state.inliers) > 3
     if (changed || next.preview !== undefined) setState(merged)
     else state = merged
   },
@@ -177,18 +211,26 @@ export function startGameMap(): void {
   // The overlay's page asks for the screen its region is on; nothing else in the app captures it.
   session.defaultSession.setDisplayMediaRequestHandler(
     (request, callback) => {
-      const fromOverlay = alive(overlay) && request.frame === overlay.webContents.mainFrame
+      // By the window, not the frame object: the frame may be handed over as another object.
+      const fromOverlay = alive(overlay) && request.frame?.processId === overlay.webContents.mainFrame.processId && request.frame?.routingId === overlay.webContents.mainFrame.routingId
       const region = settings.get('gameMap').region
-      if (!fromOverlay || !region) return callback({})
+      if (!fromOverlay || !region) {
+        glog(`screen capture asked for ${fromOverlay ? 'with no region picked' : 'by another window'}: refused`)
+        return callback({})
+      }
       const display = screen.getDisplayMatching(region)
       void desktopCapturer
         .getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
         .then((sources) => {
           const source = sources.find((s) => s.display_id === String(display.id)) ?? sources[0]
+          glog(
+            `screen capture: display ${display.id} (${display.bounds.width}x${display.bounds.height} at ${display.bounds.x},${display.bounds.y}, ${display.scaleFactor * 100}%), ` +
+              `screens offered ${sources.map((s) => `${s.display_id || '?'} "${s.name}"`).join(', ') || 'none'}, using ${source ? `${source.display_id || '?'} "${source.name}"` : 'none'}`,
+          )
           callback(source ? { video: source } : {})
         })
         .catch((err: unknown) => {
-          log(`game map: no screen to capture: ${String(err)}`)
+          glog(`no screen to capture: ${String(err)}`)
           callback({})
         })
     },

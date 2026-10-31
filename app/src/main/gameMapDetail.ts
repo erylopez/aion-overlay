@@ -11,7 +11,7 @@ import { app } from 'electron'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { log } from './tracker.ts'
+import { glog } from './gameMapLog.ts'
 
 const TILE_CDN = 'https://cdn.questlog.gg/aion-2/assets/Game/UI/Map/WorldMap'
 /** Downloads at once. */
@@ -35,7 +35,7 @@ async function download(key: string, cols: number, rows: number): Promise<void> 
   const todo: [number, number][] = []
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (!existsSync(join(folder, tileName(c, r)))) todo.push([c, r])
   if (!todo.length) return
-  log(`game map: downloading ${key}'s detail, ${todo.length} tiles`)
+  glog(`downloading ${key}'s detail, ${todo.length} tiles`)
   const started = Date.now()
   let bytes = 0
   const next = async (): Promise<void> => {
@@ -53,7 +53,7 @@ async function download(key: string, cols: number, rows: number): Promise<void> 
     }
   }
   await Promise.all(Array.from({ length: PARALLEL }, next))
-  log(`game map: ${key}'s detail downloaded, ${(bytes / 1_048_576).toFixed(1)} MB in ${((Date.now() - started) / 1000).toFixed(1)} s`)
+  glog(`${key}'s detail downloaded, ${(bytes / 1_048_576).toFixed(1)} MB in ${((Date.now() - started) / 1000).toFixed(1)} s`)
 }
 
 async function load(key: string, cols: number, rows: number): Promise<MapDetail> {
@@ -77,7 +77,7 @@ export const mapDetail = {
     if (!job) {
       job = load(key, Math.round(cols), Math.round(rows))
         .catch((err: unknown) => {
-          log(`game map: no detail for ${key}: ${String(err)}`)
+          glog(`no detail for ${key}: ${String(err)}`)
           return null
         })
         .finally(() => pending.delete(key))
@@ -93,6 +93,6 @@ export const mapDetail = {
     await mkdir(dir(key), { recursive: true })
     await writeFile(`${file}.part`, Buffer.from(data))
     await rename(`${file}.part`, file)
-    log(`game map: ${key}'s detail kept (${(data.byteLength / 1_048_576).toFixed(1)} MB of keypoints)`)
+    glog(`${key}'s detail kept (${(data.byteLength / 1_048_576).toFixed(1)} MB of keypoints)`)
   },
 }

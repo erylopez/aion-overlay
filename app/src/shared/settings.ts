@@ -102,6 +102,8 @@ export interface Settings {
     pets: boolean
     cubes: boolean
     enemies: boolean
+    /** A border around the part of the screen watched, to see that it lies on the game's map. */
+    showArea: boolean
   }
 
   /** Gatherables pinned on the Gatherables page: the maps show only these (all of them while none is). */
@@ -282,7 +284,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   minimap: { enabled: true, position: null, size: 260, height: null, opacity: 0.92, zoom: 6, collapsed: false, gatherables: false },
   mapPage: { needed: false, cubes: true, gatherables: false, hiddenPets: [] },
   gatherables: { pinned: [] },
-  gameMap: { enabled: false, region: null, gatherables: true, pets: true, cubes: true, enemies: true },
+  gameMap: { enabled: false, region: null, gatherables: true, pets: true, cubes: true, enemies: true, showArea: false },
   merchantWindow: null,
   detailsWindow: null,
   timerBar: { enabled: true, position: null, opacity: 0.92 },
@@ -425,6 +427,7 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
         pets: bool(v.pets, d.gameMap.pets),
         cubes: bool(v.cubes, d.gameMap.cubes),
         enemies: bool(v.enemies, d.gameMap.enemies),
+        showArea: bool(v.showArea, d.gameMap.showArea),
       } as Settings[K]
     }
     case 'gatherables': {
