@@ -15,6 +15,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       'The kill feed has a speaker button to mute or unmute the enemy sound.',"Enemies nearby reads players' PvP right: some with it off were marked PvP (and set off the sound), and a player switching it on in view is marked straight away.",
       'The DPS meter has a button to show or hide the My skills overlay.',
+      "The Characters page shows each character's Abyss corridors (Reshanta's Root, Sulfur Tree Island, Archipelago of Siel's Wings): which are still to do since the last reset, on Mondays, Thursdays and Saturdays at 21:00.",
       "Markers on the game's own map: pick the part of the screen where you keep the game's map, and gatherables, your tracked pets' spawns, Hidden Cubes and enemies are drawn on it, following it as you zoom and move it (the new Map V2 page).",
       "The markers on the game's map follow it more surely: the game's own map of your zone at full detail is downloaded the first time you are there and kept (the one the app comes with is used meanwhile).",
       'Gatherables on the maps: ores, gemstones, logs and plants in Verteron and Altgard, as their icons, on the Map page and the map overlay (a switch on each). A new Gatherables page pins the ones you are after, so the maps show only those.',

@@ -31,6 +31,7 @@ pub const OP_TARGET_INFO: [u8; 2] = [0x50, 0x36];
 pub const OP_PVP_SWITCH: [u8; 2] = [0x54, 0x36];
 pub const OP_CHARACTER_LIST: [u8; 2] = [0x15, 0x36];
 pub const OP_COUNTERS: [u8; 2] = [0x0B, 0x61];
+pub const OP_COUNTER: [u8; 2] = [0x0C, 0x61];
 
 /// `42 36`'s flag for a monster killed in combat (1: out of range, 7: gone).
 pub const DEATH_FLAG_COMBAT: u32 = 3;
@@ -452,29 +453,50 @@ pub fn counters(frame: &[u8]) -> Option<Vec<(u32, Vec<u64>)>> {
     let (count, mut at) = varint(b, 0)?;
     let mut out = Vec::with_capacity(count as usize);
     for _ in 0..count {
-        let flags = *b.get(at)?;
-        if flags & 0xF0 != 0 {
-            return None;
-        }
-        let id = u32_at(b, at + 1)?;
-        at += 5;
-        let mut values = Vec::new();
-        for bit in [0x01, 0x02] {
-            if flags & bit != 0 {
-                values.push(u64_at(b, at)?);
-                at += 8;
-            }
-        }
-        for bit in [0x04, 0x08] {
-            if flags & bit != 0 {
-                let (v, n) = varint(b, at)?;
-                values.push(v as u64);
-                at += n;
-            }
-        }
+        let (id, values, n) = counter_at(b, at)?;
         out.push((id, values));
+        at += n;
     }
     (at == b.len()).then_some(out)
+}
+
+/// One counter of `counters`' list at `at`: its id, values and length.
+fn counter_at(b: &[u8], start: usize) -> Option<(u32, Vec<u64>, usize)> {
+    let flags = *b.get(start)?;
+    if flags & 0xF0 != 0 {
+        return None;
+    }
+    let id = u32_at(b, start + 1)?;
+    let mut at = start + 5;
+    let mut values = Vec::new();
+    for bit in [0x01, 0x02] {
+        if flags & bit != 0 {
+            values.push(u64_at(b, at)?);
+            at += 8;
+        }
+    }
+    for bit in [0x04, 0x08] {
+        if flags & bit != 0 {
+            let (v, n) = varint(b, at)?;
+            values.push(v as u64);
+            at += n;
+        }
+    }
+    Some((id, values, at - start))
+}
+
+/// `0C 61 00 <counter as in counters> <u8>`: one counter changed, while you play. The Abyss's
+/// Artifact corridors are 10000001-10000003 (Reshanta's Root, Sulfur Tree Island, Archipelago of
+/// Siel's Wings): their passage time (130000 ms, the "02:10" the game shows) given when you enter
+/// the Abyss after a reset, and cleared once the corridor is done; your Abyss time (3) ticks while
+/// you are there (the owner's 2026-11-01 logs).
+pub fn counter(frame: &[u8]) -> Option<(u32, Vec<u64>)> {
+    let b = body(frame, OP_COUNTER)?;
+    if b.first() != Some(&0) {
+        return None;
+    }
+    let (id, values, n) = counter_at(b, 1)?;
+    (1 + n + 1 == b.len()).then_some((id, values))
 }
 
 const KINA_ITEM: [u8; 4] = [0x3f, 0x33, 0x70, 0x37];
@@ -904,6 +926,16 @@ mod tests {
         assert_eq!(get(4), Some(vec![11]));
         assert_eq!(get(9), Some(vec![25_200_000]));
         assert_eq!(get(10_000_001), Some(vec![]));
+    }
+
+    /// TremendoHeal entering the Abyss after the reset, then finishing Sulfur Tree Island (2026-11-01).
+    #[test]
+    fn a_corridor_is_given_then_done() {
+        let read = |h: &str| counter(&frame(OP_COUNTER, &hex(h)));
+        assert_eq!(read("000182969800d0fb01000000000002"), Some((10_000_002, vec![130_000])));
+        assert_eq!(read("00008296980003"), Some((10_000_002, vec![])));
+        assert_eq!(read("00030300000080fd720000000000e0b43d000000000003"), Some((3, vec![7_536_000, 4_044_000])));
+        assert_eq!(read("000182969800d0fb010000000000"), None, "cut short");
     }
 
     #[test]

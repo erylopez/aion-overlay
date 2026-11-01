@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { broadcast } from './broadcast.ts'
 import { log, tracker } from './tracker.ts'
-import { characterId, ncsoftRegion, portraitUrl, type Characters, type TrackedCharacter } from '../shared/characters.ts'
+import { ABYSS_TIME, characterId, corridorReset, CORRIDORS, ncsoftRegion, portraitUrl, type Characters, type TrackedCharacter } from '../shared/characters.ts'
 
 /** How long NCSoft's combat power and portrait are kept before asking again. */
 const FETCH_EVERY_MS = 24 * 3_600_000
@@ -135,6 +135,17 @@ async function fetchMissing(): Promise<void> {
   }
 }
 
+/** A corridor's passage time, as the game said at `at` (only newer news counts: the login's counters can be told after changes). */
+function corridorSeen(c: TrackedCharacter, id: string, ms: number, at: number): boolean {
+  if (!CORRIDORS.some((k) => k.id === id)) return false
+  c.corridors ??= { left: {}, abyssAt: null }
+  const old = c.corridors.left[id]
+  if (old && old.at > at) return false
+  c.corridors.left[id] = { ms, at }
+  if (old?.ms !== ms) log(`characters: ${c.name}'s corridor ${id}: ${ms ? `${ms} ms of passage` : 'none'}`)
+  return old?.ms !== ms || !old || old.at < corridorReset(at)
+}
+
 export const characterStore = {
   all: (): Characters => characters,
   /** Ask NCSoft again now (the refresh button). */
@@ -178,8 +189,26 @@ export function startCharacters(): void {
     if (server === null) return
     const c = entry(server, ev['name'] as string)
     c.counters = { at: (ev['ts'] as number | undefined) ?? Date.now(), values: ev['values'] as Record<string, number[]> }
+    for (const { id } of CORRIDORS) corridorSeen(c, id, c.counters.values[id]?.[0] ?? 0, c.counters.at)
     log(`characters: ${c.name}'s counters, energy ${JSON.stringify(c.counters.values['60000001'] ?? null)}`)
     changed()
+  })
+  // A counter changed while playing: the corridors given or done, and your Abyss time ticking.
+  tracker.onEvent('counter', (ev) => {
+    const server = ev['server'] as number | null
+    if (server === null) return
+    const c = entry(server, ev['name'] as string)
+    const at = (ev['ts'] as number | undefined) ?? Date.now()
+    const id = ev['id'] as string
+    if (id === ABYSS_TIME) {
+      c.corridors ??= { left: {}, abyssAt: null }
+      // Saved only when it tells something new: the first time in the Abyss since the reset.
+      const fresh = (c.corridors.abyssAt ?? 0) < corridorReset(at)
+      c.corridors.abyssAt = Math.max(c.corridors.abyssAt ?? 0, at)
+      if (fresh) changed()
+      return
+    }
+    if (corridorSeen(c, id, (ev['values'] as number[])[0] ?? 0, at)) changed()
   })
   void fetchMissing()
 }

@@ -37,6 +37,63 @@ export interface TrackedCharacter {
   listedAt: number | null
   /** Their counters at the last login the overlay saw; null until then. */
   counters: CharacterCounters | null
+  /** What the game said of their Abyss corridors; missing until it said anything. */
+  corridors?: CorridorLog
+}
+
+/**
+ * The Abyss's Artifact corridors, by the game's counter id: each has a passage time (130000 ms, the
+ * "Passage Usage Time 02:10" the game shows) given when you enter the Abyss after a reset, and
+ * taken away once you have done it ("Usage Time Expired"). Ids and order as the owner's 2026-11-01
+ * logs and screens had them (Sulfur Tree Island proven, the other two by their order).
+ */
+export const CORRIDORS = [
+  { id: '10000001', name: "Reshanta's Root" },
+  { id: '10000002', name: 'Sulfur Tree Island' },
+  { id: '10000003', name: "Archipelago of Siel's Wings" },
+] as const
+/** Your time in the Abyss: it ticks only while you are there. */
+export const ABYSS_TIME = '3'
+/** The corridors come back on Mondays, Thursdays and Saturdays at 21:00 (your clock), after the Artifact siege. */
+const CORRIDOR_RESET = { days: [1, 4, 6], hour: 21 }
+
+export interface CorridorLog {
+  /** By corridor id: its passage time left (ms; 0 when there is none) and when the game said so. */
+  left: Record<string, { ms: number; at: number }>
+  /** When you were last in the Abyss (your Abyss time ticking). */
+  abyssAt: number | null
+}
+
+/** When the corridors last came back. */
+export function corridorReset(now: number): number {
+  const d = new Date(now)
+  d.setHours(CORRIDOR_RESET.hour, 0, 0, 0)
+  while (d.getTime() > now || !CORRIDOR_RESET.days.includes(d.getDay())) d.setDate(d.getDate() - 1)
+  return d.getTime()
+}
+
+/** When they come back next. */
+export function nextCorridorReset(now: number): number {
+  const d = new Date(corridorReset(now))
+  do d.setDate(d.getDate() + 1)
+  while (!CORRIDOR_RESET.days.includes(d.getDay()))
+  return d.getTime()
+}
+
+/**
+ * A corridor now: open (its passage time is there), done (none, and you were in the Abyss since
+ * the reset, where it would have been given), or unknown (not seen since the reset: likely open).
+ */
+export type CorridorState = 'open' | 'done' | 'unknown'
+
+export function corridorStates(log: CorridorLog | undefined, now: number): CorridorState[] {
+  const since = corridorReset(now)
+  return CORRIDORS.map(({ id }) => {
+    const seen = log?.left[id]
+    if (!seen || seen.at < since) return 'unknown'
+    if (seen.ms > 0) return 'open'
+    return (log?.abyssAt ?? 0) >= since ? 'done' : 'unknown'
+  })
 }
 
 /** By `<server>:<name>`. */

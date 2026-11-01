@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Characters: every character of your account the character selection screen listed, by server,
 // with what the overlay knows of each (class, level, gear score, combat power, portrait), and their
-// Odyle energy and entry counts at a glance. Counters are read at each login and worked out from
+// Odyle energy, entry counts and Abyss corridors at a glance. Counters are read at each login and worked out from
 // the game's refill times since: a character not logged in with the overlay yet shows greyed out.
 import { computed, onBeforeUnmount, ref } from 'vue'
 import ClassIcon from '@/components/ClassIcon.vue'
@@ -10,7 +10,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import { bridge } from '@/lib/bridge.ts'
 import { loc, t } from '@/lib/i18n.ts'
 import { useApp } from '@/stores/app.ts'
-import { ASCENSION, characterId, counterNow, ENERGY, NIGHTMARE, type CounterNow, type Refill, type TrackedCharacter } from '@shared/characters.ts'
+import { ASCENSION, characterId, CORRIDORS, corridorStates, counterNow, ENERGY, nextCorridorReset, NIGHTMARE, type CorridorState, type CounterNow, type Refill, type TrackedCharacter } from '@shared/characters.ts'
 import { serverLabel } from '@shared/servers.ts'
 
 const store = useApp()
@@ -30,6 +30,7 @@ interface Row {
   energy: CounterNow | null
   nightmare: CounterNow | null
   ascension: CounterNow | null
+  corridors: CorridorState[]
 }
 
 /** By server (the one playing first), each in the game's order. */
@@ -42,6 +43,7 @@ const servers = computed(() => {
     energy: counterNow(ENERGY, c.counters, now.value),
     nightmare: counterNow(NIGHTMARE, c.counters, now.value),
     ascension: counterNow(ASCENSION, c.counters, now.value),
+    corridors: corridorStates(c.corridors, now.value),
   }))
   const by = new Map<number, Row[]>()
   for (const r of rows) by.set(r.c.server, [...(by.get(r.c.server) ?? []), r])
@@ -84,6 +86,19 @@ function counterTitle(r: Refill, c: CounterNow, at: number): string {
   return lines.join('\n')
 }
 const pct = (c: CounterNow): number => Math.min(100, (c.now / c.max) * 100)
+
+/** Corridors: each one's state, in words, for the tooltip. */
+const CORRIDOR: Record<CorridorState, string> = {
+  open: 'still to do',
+  done: 'done',
+  unknown: 'not seen since the reset (likely still to do: enter the Abyss to check)',
+}
+const corridorsLeft = (list: CorridorState[]): number => list.filter((x) => x !== 'done').length
+function corridorTitle(list: CorridorState[]): string {
+  const lines = CORRIDORS.map((k, i) => `${k.name}: ${t(CORRIDOR[list[i]!])}`)
+  lines.push(t('Back {when}', { when: stamp(nextCorridorReset(now.value)) }))
+  return lines.join('\n')
+}
 </script>
 
 <template>
@@ -196,6 +211,7 @@ const pct = (c: CounterNow): number => Math.min(100, (c.now / c.max) * 100)
               <th class="w-44 whitespace-nowrap px-3 text-left font-medium">
                 <span class="flex items-center gap-1.5"><img :src="ICONS.ticket" alt="" draggable="false" class="size-5" />{{ t('Ascension Trial') }}</span>
               </th>
+              <th class="w-32 whitespace-nowrap px-3 text-left font-medium" :title="t('The Abyss\'s Artifact corridors, back on Mondays, Thursdays and Saturdays at 21:00.')">{{ t('Corridors') }}</th>
               <th class="w-36 whitespace-nowrap pr-4 text-right font-medium">{{ t('Last read') }}</th>
             </tr>
           </thead>
@@ -248,9 +264,26 @@ const pct = (c: CounterNow): number => Math.min(100, (c.now / c.max) * 100)
                   </div>
                   <span v-else class="text-darkest">–</span>
                 </td>
+                <td class="px-3 py-2" :title="corridorTitle(r.corridors)">
+                  <div class="flex items-center gap-2">
+                    <div class="flex gap-1">
+                      <span
+                        v-for="(st, i) in r.corridors"
+                        :key="i"
+                        :class="[
+                          'size-3 rounded-full',
+                          st === 'open' ? 'bg-sky-400' : st === 'done' ? 'bg-dark' : 'border border-dashed border-sky-400/70',
+                        ]"
+                      />
+                    </div>
+                    <span :class="['text-xs tabular-nums', corridorsLeft(r.corridors) ? 'text-default' : 'text-darkest']">
+                      {{ corridorsLeft(r.corridors) ? t('{n} left', { n: corridorsLeft(r.corridors) }) : t('Done') }}
+                    </span>
+                  </div>
+                </td>
                 <td class="pr-4 text-right text-xs text-darker">{{ ago(r.c.counters.at) }}</td>
               </template>
-              <td v-else colspan="4" class="px-3 py-2 text-xs">
+              <td v-else colspan="5" class="px-3 py-2 text-xs">
                 <span class="inline-flex items-center gap-1.5 rounded-full border border-dashed border-light px-2.5 py-1 text-darker">
                   <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5h2.5a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H10M6.5 11 9.5 8l-3-3M9.5 8H2.5" /></svg>
                   {{ t('Log in with {name} once to start tracking it', { name: r.c.name }) }}
