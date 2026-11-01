@@ -205,14 +205,14 @@ function corridorTitle(list: CorridorState[]): string {
               <th class="px-3 text-left font-medium">
                 <span class="flex items-center gap-1.5"><img :src="ICONS.energy" alt="" draggable="false" class="size-5" />{{ t('Odyle Energy') }}</span>
               </th>
-              <th class="w-44 whitespace-nowrap px-3 text-left font-medium">
+              <th class="w-48 whitespace-nowrap px-5 text-left font-medium">
                 <span class="flex items-center gap-1.5"><img :src="ICONS.ticket" alt="" draggable="false" class="size-5" />Nightmare</span>
               </th>
-              <th class="w-44 whitespace-nowrap px-3 text-left font-medium">
+              <th class="w-48 whitespace-nowrap px-5 text-left font-medium">
                 <span class="flex items-center gap-1.5"><img :src="ICONS.ticket" alt="" draggable="false" class="size-5" />{{ t('Ascension Trial') }}</span>
               </th>
-              <th class="w-48 whitespace-nowrap px-3 text-left font-medium" :title="t('The Abyss\'s Artifact corridors, back on Mondays, Thursdays and Saturdays at 21:00.')">{{ t('Corridors') }}</th>
-              <th class="w-24 whitespace-nowrap pr-4 text-right font-medium">{{ t('Last read') }}</th>
+              <th class="w-40 whitespace-nowrap px-5 text-center font-medium" :title="t('The Abyss\'s Artifact corridors, back on Mondays, Thursdays and Saturdays at 21:00.')">{{ t('Corridors') }}</th>
+              <th class="w-px whitespace-nowrap pl-5 pr-4 text-right font-medium">{{ t('Last read') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-[color:var(--line)]">
@@ -232,7 +232,7 @@ function corridorTitle(list: CorridorState[]): string {
                       <span class="font-semibold">{{ r.energy.now }}</span>
                       <span v-if="r.energy.extra" class="font-semibold" :style="{ color: CHARGED }">(+{{ r.energy.extra }})</span>
                       <span class="text-xs text-darkest">/ {{ r.energy.max }}</span>
-                      <span v-if="r.energy.now !== r.energy.read" class="text-[11px] text-darker">{{ t('~{n} since login', { n: `+${r.energy.now - r.energy.read}` }) }}</span>
+                      <span v-if="r.energy.now !== r.energy.read" class="whitespace-nowrap text-[11px] text-darker">{{ t('~{n} since login', { n: `+${r.energy.now - r.energy.read}` }) }}</span>
                       <span class="ml-auto text-[11px] text-darker">
                         <template v-if="r.energy.now >= r.energy.max">{{ t('Full') }}</template>
                         <template v-else>+{{ ENERGY.per }} {{ t('in') }} <Countdown :at="r.energy.nextAt" :now="now" /></template>
@@ -244,7 +244,7 @@ function corridorTitle(list: CorridorState[]): string {
                   </div>
                   <span v-else class="text-darkest">–</span>
                 </td>
-                <td v-for="[def, c] in ([[NIGHTMARE, r.nightmare], [ASCENSION, r.ascension]] as const)" :key="def.id" class="px-3 py-2">
+                <td v-for="[def, c] in ([[NIGHTMARE, r.nightmare], [ASCENSION, r.ascension]] as const)" :key="def.id" class="px-5 py-2">
                   <div v-if="c" :title="counterTitle(def, c, r.c.counters.at)">
                     <div class="mb-1 flex items-baseline gap-1 tabular-nums">
                       <span class="font-semibold">{{ c.now }}</span>
@@ -264,8 +264,8 @@ function corridorTitle(list: CorridorState[]): string {
                   </div>
                   <span v-else class="text-darkest">–</span>
                 </td>
-                <td class="px-3 py-2" :title="corridorTitle(r.corridors)">
-                  <div class="flex items-center gap-2">
+                <td class="px-5 py-2" :title="corridorTitle(r.corridors)">
+                  <div class="flex items-center justify-center gap-2">
                     <div class="flex gap-1">
                       <span
                         v-for="(st, i) in r.corridors"
@@ -281,7 +281,7 @@ function corridorTitle(list: CorridorState[]): string {
                     </span>
                   </div>
                 </td>
-                <td class="whitespace-nowrap pr-4 text-right text-xs text-darker">{{ ago(r.c.counters.at) }}</td>
+                <td class="whitespace-nowrap pl-5 pr-4 text-right text-xs text-darker">{{ ago(r.c.counters.at) }}</td>
               </template>
               <td v-else colspan="5" class="px-3 py-2 text-xs">
                 <span class="inline-flex items-center gap-1.5 rounded-full border border-dashed border-light px-2.5 py-1 text-darker">
