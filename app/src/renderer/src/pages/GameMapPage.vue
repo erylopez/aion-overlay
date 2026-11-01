@@ -15,6 +15,16 @@ import type { InvokeResult } from '@shared/ipc.ts'
 
 /** Pictures are taken at most this often, and one at a time. */
 const FRAME_MS = 120
+/**
+ * The map not found for IDLE_AFTER_MS (the game's map closed, as it mostly is): a picture only every
+ * IDLE_FRAME_MS, and the screen captured at IDLE_FPS, so the overlay leaves the game alone. Opened,
+ * the map is found within a second or so, and it is back to full speed.
+ */
+const IDLE_AFTER_MS = 3_000
+const IDLE_FRAME_MS = 1_000
+const FPS = { on: 10, idle: 2 }
+/** The slow way (a whole screen captured each time) never more often than this. */
+const SLOW_FRAME_MS = 500
 /** And made at most this big across (the match needs no more). */
 const PICTURE_PX = 720
 /** A picture the worker has not answered in this long is given up on (it never should). */
@@ -127,6 +137,10 @@ async function loadDetail(key: string): Promise<void> {
 
 const video = document.createElement('video')
 video.muted = true
+// On the page (a near-invisible speck in the corner): a video off the page may never call back with
+// its frames, which is how a stuck capture is told from a working one.
+Object.assign(video.style, { position: 'fixed', left: '0', top: '0', width: '2px', height: '2px', opacity: '0.01', pointerEvents: 'none' })
+document.body.appendChild(video)
 let stream: MediaStream | null = null
 let display: { bounds: { x: number; y: number; width: number; height: number }; scaleFactor: number } | null = null
 const picture = new OffscreenCanvas(1, 1)
@@ -162,7 +176,8 @@ async function startCapture(): Promise<void> {
     `capture: asking for the screen; region ${region ? `${region.width}x${region.height} at ${region.x},${region.y}` : 'none'}, ` +
       `display ${display ? `${display.bounds.width}x${display.bounds.height} at ${display.bounds.x},${display.bounds.y}, ${display.scaleFactor * 100}%` : 'none'}, window ${window.innerWidth}x${window.innerHeight} at ${window.devicePixelRatio * 100}%`,
   )
-  stream = await within(8_000, 'the screen capture request', navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 10 }, audio: false }))
+  stream = await within(8_000, 'the screen capture request', navigator.mediaDevices.getDisplayMedia({ video: { frameRate: FPS.on }, audio: false }))
+  fps = FPS.on
   const track = stream.getVideoTracks()[0]
   const s = track?.getSettings()
   note(`capture: got the screen, ${s?.width ?? '?'}x${s?.height ?? '?'} at ${s?.frameRate ?? '?'} fps ("${track?.label ?? '?'}")`)
@@ -225,6 +240,17 @@ async function makePreview(): Promise<void> {
   preview = `data:image/jpeg;base64,${btoa(bin)}`
 }
 
+/** When the last picture was taken. */
+let snapAt = 0
+/** The screen capture's frame rate, as last asked. */
+let fps = FPS.on
+function setFps(want: number): void {
+  const track = stream?.getVideoTracks()[0]
+  if (!track || want === fps) return
+  fps = want
+  track.applyConstraints({ frameRate: want }).catch(() => undefined)
+}
+
 /** This part of the screen, as a picture for the worker. */
 function snap(): void {
   const region = cfg.value.region
@@ -233,9 +259,14 @@ function snap(): void {
     busy = false
   }
   if (busy || !reference.value || !display || !region) return
+  // Gone a while: fewer pictures, and fewer frames of the screen.
+  const idle = !placed.value || Date.now() - placed.value.at > IDLE_AFTER_MS
+  setFps(idle ? FPS.idle : FPS.on)
+  if (Date.now() - snapAt < (slow ? Math.max(SLOW_FRAME_MS, idle ? IDLE_FRAME_MS : 0) : idle ? IDLE_FRAME_MS : 0)) return
+  snapAt = Date.now()
   if (slow) return void grab(region)
   // A stream that stopped giving pictures (Windows does, after hours): started again.
-  if (capture.value === 'on' && Date.now() - frameAt > 5_000 && !starting) {
+  if (capture.value === 'on' && Date.now() - frameAt > 15_000 && !starting) {
     fail('the screen capture stopped giving pictures: starting it again')
     capture.value = 'failed'
     void retryCapture()
@@ -450,7 +481,8 @@ function report(): void {
     ms: lastMs,
     detail: detail.value,
     mode: lastMode,
-    error: lastError.value,
+    // A plain copy: a reactive one cannot be sent to the app (and every report after the first problem failed).
+    error: lastError.value ? { ...lastError.value } : null,
     capture: capture.value,
     pictures,
   }
@@ -460,8 +492,13 @@ function report(): void {
   if (key === reported && !withPreview) return
   reported = key
   if (withPreview) previewAt = Date.now()
-  void api.invoke('gamemap:report', withPreview ? { ...state, preview } : state)
+  api.invoke('gamemap:report', withPreview ? { ...state, preview } : state).catch((err: unknown) => {
+    // Said once: Map V2 shows nothing new while this fails.
+    if (!reportFailed) note(`report to Map V2 failed: ${String(err)}`)
+    reportFailed = true
+  })
 }
+let reportFailed = false
 let previewAt = 0
 
 /** Once a minute in the map log: how it went. */
@@ -504,6 +541,7 @@ onBeforeUnmount(() => {
   if (tickTimer) clearInterval(tickTimer)
   for (const track of stream?.getTracks() ?? []) track.stop()
   worker.terminate()
+  video.remove()
 })
 </script>
 

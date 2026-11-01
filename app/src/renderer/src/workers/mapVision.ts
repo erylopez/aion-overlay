@@ -63,10 +63,15 @@ const FRAME_FEATURES = { follow: 1_200, search: 2_500 }
 /** The zone map is cut into cells this big, to pick its keypoints near the last place quickly. */
 const CELL = 128
 /**
- * How often the map is looked for while lost: around you (a tenth of a second), and the whole
- * zone by its keypoints (a second; seldom when where you are is known, as it is found around you).
+ * How often the map is looked for while lost: around you at every size (every 0.3 s just lost, every
+ * 3 s once gone a while: the game's map closed, as it mostly is, the search must not eat the
+ * game's processor), and the whole zone by its keypoints (seldom when where you are is known, as it
+ * is found around you; only for a map moved away from you, every 30 s once gone a while: it takes
+ * half a second or more).
  */
-const GLOBAL_EVERY_MS = { near: 300, zone: 4_000, zoneKnown: 15_000 }
+const GLOBAL_EVERY_MS = { near: 300, nearIdle: 3_000, zone: 4_000, zoneKnown: 15_000, zoneIdle: 30_000 }
+/** Lost this long: gone a while. */
+const IDLE_AFTER_MS = 3_000
 /** The picture's sizes against the shipped map's (picture pixels to one of its pixels) looked for around you. */
 const SCALES = { min: 0.35, max: 6, step: 1.1 }
 /** Across, in pixels, the picture is shrunk to: to look for it, to follow it, and to place it finely. */
@@ -75,6 +80,8 @@ const FOLLOW_PX = 240
 const FINE_PX = 360
 /** How well the picture must compare (normalised cross-correlation): to be found, and to be followed. */
 const MIN_SCORE = { look: 0.5, follow: 0.35 }
+/** The quick first look scoring below this: nothing like the map there, no finer look (the map closed). */
+const ROUGH_SCORE = 0.35
 /** Followed, the map may have moved this many picture pixels past where its own movement put it, and zoomed by this. */
 const FOLLOW_REACH = 30
 const FOLLOW_ZOOM = 1.04
@@ -115,6 +122,10 @@ let lastScale: number | null = null
 let last: number[] | null = null
 let lastZone = 0
 let lastNear = 0
+/** When the map was last found (or the zone map came): lost long after it, the search slows. */
+let foundAt = 0
+/** No mask: one empty Mat for every detection (a new one each time was never freed). */
+let noMask: Cv = null
 /** The previous picture, and points on it to follow into the next one. */
 let prevGray: Cv = null
 let prevPts: Cv = null
@@ -150,7 +161,7 @@ function detect(image: ImageData, n: number, dx = 0, dy = 0): { pts: number[]; d
   const kp = new cv.KeyPointVector()
   const desc = new cv.Mat()
   const detector = orb(n)
-  detector.detectAndCompute(gray, new cv.Mat(), kp, desc)
+  detector.detectAndCompute(gray, noMask, kp, desc)
   detector.delete()
   gray.delete()
   const pts: number[] = []
@@ -187,6 +198,7 @@ async function loadReference(key: string, url: string): Promise<void> {
   prevGray = prevPts = null
   lastZone = 0
   lastNear = 0
+  foundAt = performance.now()
   flowRun = 0
 }
 
@@ -400,10 +412,15 @@ function place(gray: Cv, scale: number, at: [number, number], reach: number, px:
   }
   const part = coarseGray.roi(new cv.Rect(x0, y0, x1 - x0, y1 - y0))
   const sized = new cv.Mat()
-  cv.resize(part, sized, new cv.Size(iw, ih), 0, 0, cv.INTER_AREA)
-  part.delete()
   const scores = new cv.Mat()
-  cv.matchTemplate(sized, small, scores, cv.TM_CCOEFF_NORMED)
+  try {
+    cv.resize(part, sized, new cv.Size(iw, ih), 0, 0, cv.INTER_AREA)
+    cv.matchTemplate(sized, small, scores, cv.TM_CCOEFF_NORMED)
+  } catch (err) {
+    for (const mat of [part, small, sized, scores]) mat.delete()
+    throw err
+  }
+  part.delete()
   const best = cv.minMaxLoc(scores)
   const at2 = (x: number, y: number): number => scores.floatAt(y, x)
   let { x: u, y: v } = best.maxLoc as { x: number; y: number }
@@ -444,7 +461,7 @@ function lookAround(gray: Cv, player: [number, number], full: boolean): Placed |
     const m = place(gray, scale, player, reach, LOOK_PX)
     if (m && (!best || m.score > best.score)) best = { ...m, scale }
   }
-  if (!best) return null
+  if (!best || best.score < ROUGH_SCORE) return null
   // Between the sizes tried: a little smaller or bigger, finer.
   let fine: { matrix: number[]; score: number } | null = null
   for (const f of [1 / 1.06, 1 / 1.03, 1, 1.03, 1.06]) {
@@ -519,7 +536,7 @@ function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffe
     const desc = new cv.Mat()
     // More while looking, or when the last picture was only carried by its movement (plain ground).
     const detector = orb(last && !flowRun ? FRAME_FEATURES.follow : FRAME_FEATURES.search)
-    detector.detectAndCompute(gray, new cv.Mat(), kp, desc)
+    detector.detectAndCompute(gray, noMask, kp, desc)
     detector.delete()
     const pts = new Float32Array(kp.size() * 2)
     for (let i = 0; i < kp.size(); i++) {
@@ -535,6 +552,7 @@ function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffe
   const moved = last && shift ? [last[0]!, last[1]!, last[2]! + shift[0], last[3]!, last[4]!, last[5]! + shift[1]] : last
   const found = (m: Placed, mode: Mode): { matrix: number[]; inliers: number; score?: number; mode: Mode } => {
     last = steady(moved, m.matrix, shift, width, height)
+    foundAt = performance.now()
     lastScale = toCoarse(last)[0]!
     flowRun = 0
     return { matrix: last, inliers: m.inliers, score: m.score, mode }
@@ -564,7 +582,7 @@ function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffe
     // Lost: around you (the game's map opens on you), at the last size every picture, at every size now and then.
     if (player && coarseGray && coarse && ref) {
       const k = coarse.width / ref.width
-      const full = now - lastNear >= GLOBAL_EVERY_MS.near
+      const full = now - lastNear >= (now - foundAt > IDLE_AFTER_MS ? GLOBAL_EVERY_MS.nearIdle : GLOBAL_EVERY_MS.near)
       if (full) lastNear = now
       if (full || lastScale) {
         const m = lookAround(gray, [player[0] * k, player[1] * k], full)
@@ -572,7 +590,8 @@ function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffe
       }
     }
     // The whole zone by its keypoints: seldom while where you are is known.
-    if (now - lastZone >= (player ? GLOBAL_EVERY_MS.zoneKnown : GLOBAL_EVERY_MS.zone) && keypoints().desc.rows >= MIN_INLIERS.local) {
+    const zoneEvery = now - foundAt > IDLE_AFTER_MS && player ? GLOBAL_EVERY_MS.zoneIdle : player ? GLOBAL_EVERY_MS.zoneKnown : GLOBAL_EVERY_MS.zone
+    if (now - lastZone >= zoneEvery && keypoints().desc.rows >= MIN_INLIERS.local) {
       lastZone = now
       // On the shipped map (a third of the keypoints of the detail), then in the detail's pixels.
       const on = coarse ?? ref
@@ -593,6 +612,7 @@ function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffe
 
 self.onmessage = async (e: MessageEvent): Promise<void> => {
   cv ??= await ready
+  noMask ??= new cv.Mat()
   const msg = e.data as
     | { type: 'reference'; key: string; url: string }
     | { type: 'detail'; key: string; features?: ArrayBuffer; cols?: number; rows?: number; tiles?: ArrayBuffer[] }
