@@ -894,6 +894,8 @@ export const ES: Record<string, string> = {
   'Nothing yet: is the game open, with the markers on?': 'Nada todavía: ¿está el juego abierto, con los marcadores prendidos?',
   'Now': 'Ahora',
   'Points that agree': 'Puntos que coinciden',
+  'How well it matches': 'Qué tan bien coincide',
+  'Capturing the slow way': 'Capturando por la vía lenta',
   'Time per picture': 'Tiempo por imagen',
   'Last problem': 'Último problema',
   'none': 'ninguno',

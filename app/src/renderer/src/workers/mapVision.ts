@@ -18,6 +18,17 @@
  * what the map is followed on from then on, while the occasional whole-zone search stays on the
  * shipped map, which is lighter.
  *
+ * Keypoints are not all, though: the game draws its map with roads, names and its own colours
+ * over it, and a zoomed-out map has too few keypoints left that agree (half a dozen, against
+ * tens of thousands to sort through, a second a picture). So the map is first looked for as a
+ * picture: where you are is known (the game tells, the Map page draws you there) and the game's
+ * map opens on you, so the shipped map around you is compared with the picture, shrunk to a few
+ * sizes (normalised cross-correlation, which a fainter map, its opacity turned down, only makes
+ * score lower). That finds it in a tenth of a second, and following it from one picture to the
+ * next is the same comparison at its size, in a few milliseconds, then once more at full size for
+ * a placement steady to a tenth of a pixel. The keypoints remain for when that does not match
+ * (half the map covered) and for when where you are is not known.
+ *
  * Messages in: { type: 'reference', key, url } to (re)load a zone's map; { type: 'detail', key,
  * features | tiles, cols, rows } its full detail; { type: 'frame', width,
  * height, rgba, player } a picture, with where you are on the zone map (its pixels) when known.
@@ -51,10 +62,24 @@ const FEATURES_MAGIC = 0x314d4b4c
 const FRAME_FEATURES = { follow: 1_200, search: 2_500 }
 /** The zone map is cut into cells this big, to pick its keypoints near the last place quickly. */
 const CELL = 128
-/** How often the whole zone is searched while the map is lost: often at first, then less (the map is closed). */
-const GLOBAL_EVERY_MS = { near: 500, zone: 4_000 }
-/** Around you, this far (zone map pixels at 3072 px) when the map is lost. */
-const NEAR_PLAYER = 600
+/**
+ * How often the map is looked for while lost: around you (a tenth of a second), and the whole
+ * zone by its keypoints (a second; seldom when where you are is known, as it is found around you).
+ */
+const GLOBAL_EVERY_MS = { near: 300, zone: 4_000, zoneKnown: 15_000 }
+/** The picture's sizes against the shipped map's (picture pixels to one of its pixels) looked for around you. */
+const SCALES = { min: 0.35, max: 6, step: 1.1 }
+/** Across, in pixels, the picture is shrunk to: to look for it, to follow it, and to place it finely. */
+const LOOK_PX = 96
+const FOLLOW_PX = 240
+const FINE_PX = 360
+/** How well the picture must compare (normalised cross-correlation): to be found, and to be followed. */
+const MIN_SCORE = { look: 0.5, follow: 0.35 }
+/** Followed, the map may have moved this many picture pixels past where its own movement put it, and zoomed by this. */
+const FOLLOW_REACH = 30
+const FOLLOW_ZOOM = 1.04
+/** The keypoints of the zone map near a place, at most: more takes long (a second for the whole detail). */
+const MAX_SUBSET = 30_000
 /** Pictures in a row carried by the map's movement alone, without a match (about 3 s). */
 const FLOW_ONLY = 24
 /** Points followed from one picture to the next. */
@@ -82,6 +107,10 @@ let cv: Cv = null
 /** The zone map the app ships; and the one matched against, the detail once it is here. */
 let coarse: Reference | null = null
 let ref: Reference | null = null
+/** The shipped map itself, grey, to compare pictures with. */
+let coarseGray: Cv = null
+/** The picture's size against the shipped map when it was last found: looked for first. */
+let lastScale: number | null = null
 /** The last match: zone map pixels → picture pixels, [a, b, c, d, e, f]. */
 let last: number[] | null = null
 let lastZone = 0
@@ -141,11 +170,18 @@ async function loadReference(key: string, url: string): Promise<void> {
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!
   ctx.drawImage(bitmap, 0, 0)
-  const { pts, desc } = detect(ctx.getImageData(0, 0, bitmap.width, bitmap.height), REF_FEATURES)
+  const image = ctx.getImageData(0, 0, bitmap.width, bitmap.height)
+  const { pts, desc } = detect(image, REF_FEATURES)
+  const rgba = cv.matFromImageData(image)
+  coarseGray?.delete()
+  coarseGray = new cv.Mat()
+  cv.cvtColor(rgba, coarseGray, cv.COLOR_RGBA2GRAY)
+  rgba.delete()
   coarse?.descMat.delete()
   if (ref && ref !== coarse) ref.descMat.delete()
   coarse = ref = makeReference(key, bitmap.width, bitmap.height, new Float32Array(pts), desc)
   last = null
+  lastScale = null
   prevGray?.delete()
   prevPts?.delete()
   prevGray = prevPts = null
@@ -209,7 +245,7 @@ function useReference(next: Reference): void {
   ref = next
 }
 
-/** The zone map's keypoints in cells x0..x1, y0..y1 (zone map pixels); null when too few. */
+/** The zone map's keypoints in cells x0..x1, y0..y1 (zone map pixels); null when too few, or too many to match quickly. */
 function inBox(x0: number, y0: number, x1: number, y1: number): number[] | null {
   if (!ref) return null
   const out: number[] = []
@@ -218,7 +254,7 @@ function inBox(x0: number, y0: number, x1: number, y1: number): number[] | null 
   const cy0 = Math.max(0, Math.floor(y0 / CELL))
   const cy1 = Math.min(Math.ceil(ref.height / CELL) - 1, Math.floor(y1 / CELL))
   for (let y = cy0; y <= cy1; y++) for (let x = cx0; x <= cx1; x++) out.push(...(ref.cells.get(y * ref.cols + x) ?? []))
-  return out.length >= 40 ? out : null
+  return out.length >= 40 && out.length <= MAX_SUBSET ? out : null
 }
 
 /** The keypoints of the zone map around where `m` puts the picture (`pad` times its size again on each side). */
@@ -322,7 +358,126 @@ function solve(frameDesc: Cv, framePts: Float32Array, subset: number[] | null, o
   return { matrix: m, inliers }
 }
 
-type Mode = 'local' | 'flow' | 'near' | 'zone' | 'wait'
+/** A match against the shipped map (its pixels → the picture's): `inliers` for keypoints, `score` for the picture compared whole. */
+type Placed = { matrix: number[]; inliers: number; score?: number }
+
+/** The shipped map's pixels ↔ the matched map's (the detail's, once here). */
+function toCoarse(m: number[]): number[] {
+  const k = ref!.width / coarse!.width
+  return [m[0]! * k, m[1]! * k, m[2]!, m[3]! * k, m[4]! * k, m[5]!]
+}
+function fromCoarse(m: number[]): number[] {
+  const k = ref!.width / coarse!.width
+  return [m[0]! / k, m[1]! / k, m[2]!, m[3]! / k, m[4]! / k, m[5]!]
+}
+/** Where the picture's middle is on the map `m` places it on. */
+function middleOf(m: number[], width: number, height: number): [number, number] {
+  return [(width / 2 - m[2]!) / m[0]!, (height / 2 - m[5]!) / m[4]!]
+}
+
+/**
+ * The picture compared with the shipped map at `scale` (picture pixels to one of its pixels), the
+ * picture's middle within `reach` picture pixels of `at` (shipped map pixels): the best place, and
+ * how well it compares there (normalised cross-correlation, -1 to 1). Both shrunk so the picture
+ * is `px` across; the place is found to a fraction of a pixel (a parabola through the scores).
+ */
+function place(gray: Cv, scale: number, at: [number, number], reach: number, px: number): { matrix: number[]; score: number } | null {
+  const k = Math.min(1, px / Math.max(gray.cols, gray.rows))
+  const small = new cv.Mat()
+  cv.resize(gray, small, new cv.Size(Math.max(8, Math.round(gray.cols * k)), Math.max(8, Math.round(gray.rows * k))), 0, 0, cv.INTER_AREA)
+  const kx = small.cols / gray.cols
+  const ky = small.rows / gray.rows
+  const x0 = Math.max(0, Math.floor(at[0] - (gray.cols / 2 + reach) / scale))
+  const y0 = Math.max(0, Math.floor(at[1] - (gray.rows / 2 + reach) / scale))
+  const x1 = Math.min(coarseGray.cols, Math.ceil(at[0] + (gray.cols / 2 + reach) / scale))
+  const y1 = Math.min(coarseGray.rows, Math.ceil(at[1] + (gray.rows / 2 + reach) / scale))
+  const iw = Math.round((x1 - x0) * scale * kx)
+  const ih = Math.round((y1 - y0) * scale * ky)
+  // Off the map's edge.
+  if (x1 <= x0 || y1 <= y0 || iw < small.cols + 2 || ih < small.rows + 2) {
+    small.delete()
+    return null
+  }
+  const part = coarseGray.roi(new cv.Rect(x0, y0, x1 - x0, y1 - y0))
+  const sized = new cv.Mat()
+  cv.resize(part, sized, new cv.Size(iw, ih), 0, 0, cv.INTER_AREA)
+  part.delete()
+  const scores = new cv.Mat()
+  cv.matchTemplate(sized, small, scores, cv.TM_CCOEFF_NORMED)
+  const best = cv.minMaxLoc(scores)
+  const at2 = (x: number, y: number): number => scores.floatAt(y, x)
+  let { x: u, y: v } = best.maxLoc as { x: number; y: number }
+  const [bu, bv] = [u, v]
+  if (bu > 0 && bu < scores.cols - 1) {
+    const [l, c, r] = [at2(bu - 1, bv), at2(bu, bv), at2(bu + 1, bv)]
+    if (l - 2 * c + r < 0) u += (0.5 * (l - r)) / (l - 2 * c + r)
+  }
+  if (bv > 0 && bv < scores.rows - 1) {
+    const [l, c, r] = [at2(bu, bv - 1), at2(bu, bv), at2(bu, bv + 1)]
+    if (l - 2 * c + r < 0) v += (0.5 * (l - r)) / (l - 2 * c + r)
+  }
+  small.delete()
+  sized.delete()
+  scores.delete()
+  // The shipped map's pixel x lands at (x - x0) * sx - u / kx on the picture.
+  const sx = iw / (x1 - x0) / kx
+  const sy = ih / (y1 - y0) / ky
+  return { matrix: [sx, 0, -sx * x0 - u / kx, 0, sy, -sy * y0 - v / ky], score: best.maxVal as number }
+}
+
+/** Placed finely: compared once more at (nearly) the picture's own size, a few pixels around. */
+function refine(gray: Cv, m: { matrix: number[]; score: number }): { matrix: number[]; score: number } {
+  return place(gray, m.matrix[0]!, middleOf(m.matrix, gray.cols, gray.rows), 3, FINE_PX) ?? m
+}
+
+/**
+ * Lost, and where you are known: the game's map opens on you, so the picture is compared with the
+ * shipped map around you, at each size it could be (the last one first, alone, which is quick).
+ */
+function lookAround(gray: Cv, player: [number, number], full: boolean): Placed | null {
+  const reach = Math.max(gray.cols, gray.rows) / 2
+  let best: { matrix: number[]; score: number; scale: number } | null = null
+  const sizes: number[] = []
+  if (lastScale) sizes.push(lastScale / SCALES.step, lastScale, lastScale * SCALES.step)
+  if (full) for (let s = SCALES.min; s <= SCALES.max; s *= SCALES.step) sizes.push(s)
+  for (const scale of sizes) {
+    const m = place(gray, scale, player, reach, LOOK_PX)
+    if (m && (!best || m.score > best.score)) best = { ...m, scale }
+  }
+  if (!best) return null
+  // Between the sizes tried: a little smaller or bigger, finer.
+  let fine: { matrix: number[]; score: number } | null = null
+  for (const f of [1 / 1.06, 1 / 1.03, 1, 1.03, 1.06]) {
+    const m = place(gray, best.scale * f, middleOf(best.matrix, gray.cols, gray.rows), 12, FOLLOW_PX)
+    if (m && (!fine || m.score > fine.score)) fine = m
+  }
+  if (!fine || fine.score < MIN_SCORE.look) return null
+  const done = refine(gray, fine)
+  return { matrix: done.matrix, inliers: 0, score: done.score }
+}
+
+/**
+ * Found, the map followed: compared where its movement puts it, at its size and a little smaller
+ * and bigger (a zoom), the size taken between them. A size within 1.5% of the last is kept as it
+ * was: the scores are never quite the same twice, and the markers would breathe with them.
+ */
+function follow(gray: Cv, moved: number[]): Placed | null {
+  const m = toCoarse(moved)
+  const scale = m[0]!
+  const at = middleOf(m, gray.cols, gray.rows)
+  const tried = [1 / FOLLOW_ZOOM, 1, FOLLOW_ZOOM].map((f) => place(gray, scale * f, at, FOLLOW_REACH, FOLLOW_PX))
+  const [l, c, r] = tried.map((t) => t?.score ?? -1) as [number, number, number]
+  if (Math.max(l, c, r) < MIN_SCORE.follow) return null
+  let next = scale * (l > c && l > r ? 1 / FOLLOW_ZOOM : r > c && r > l ? FOLLOW_ZOOM : 1)
+  if (c >= l && c >= r && l > -1 && r > -1 && l - 2 * c + r < 0) next = scale * FOLLOW_ZOOM ** Math.max(-0.5, Math.min(0.5, (0.5 * (l - r)) / (l - 2 * c + r)))
+  if (Math.abs(next / scale - 1) < 0.015) next = scale
+  const placed = place(gray, next, at, FOLLOW_REACH, FOLLOW_PX)
+  if (!placed || placed.score < MIN_SCORE.follow) return null
+  const done = refine(gray, placed)
+  return { matrix: fromCoarse(done.matrix), inliers: 0, score: done.score }
+}
+
+type Mode = 'follow' | 'local' | 'flow' | 'near' | 'zone' | 'wait'
 
 /**
  * Each match lands a pixel or three off the last one even on a map that has not moved (the game's
@@ -351,38 +506,49 @@ function steady(moved: number[] | null, m: number[], shift: [number, number] | n
   return moved.map((v, i) => v * keep + m[i]! * (1 - keep))
 }
 
-function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffer>, player: [number, number] | null): { matrix: number[] | null; inliers: number; mode: Mode } {
+function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffer>, player: [number, number] | null): { matrix: number[] | null; inliers: number; score?: number; mode: Mode } {
   const image = cv.matFromImageData(new ImageData(rgba, width, height))
   const gray = new cv.Mat()
   cv.cvtColor(image, gray, cv.COLOR_RGBA2GRAY)
   image.delete()
-  const kp = new cv.KeyPointVector()
-  const desc = new cv.Mat()
-  // More while looking, or when the last picture was only carried by its movement (plain ground).
-  const detector = orb(last && !flowRun ? FRAME_FEATURES.follow : FRAME_FEATURES.search)
-  detector.detectAndCompute(gray, new cv.Mat(), kp, desc)
-  detector.delete()
-  const pts = new Float32Array(kp.size() * 2)
-  for (let i = 0; i < kp.size(); i++) {
-    const p = kp.get(i).pt
-    pts[i * 2] = p.x
-    pts[i * 2 + 1] = p.y
+  // The picture's keypoints, only when they are needed (the picture compared whole did not match).
+  let kps: { pts: Float32Array; desc: Cv } | null = null
+  const keypoints = (): { pts: Float32Array; desc: Cv } => {
+    if (kps) return kps
+    const kp = new cv.KeyPointVector()
+    const desc = new cv.Mat()
+    // More while looking, or when the last picture was only carried by its movement (plain ground).
+    const detector = orb(last && !flowRun ? FRAME_FEATURES.follow : FRAME_FEATURES.search)
+    detector.detectAndCompute(gray, new cv.Mat(), kp, desc)
+    detector.delete()
+    const pts = new Float32Array(kp.size() * 2)
+    for (let i = 0; i < kp.size(); i++) {
+      const p = kp.get(i).pt
+      pts[i * 2] = p.x
+      pts[i * 2 + 1] = p.y
+    }
+    kp.delete()
+    return (kps = { pts, desc })
   }
-  kp.delete()
   // Where the map went since the last picture: the last match, moved as the picture moved.
   const shift = last ? flowShift(gray) : null
   const moved = last && shift ? [last[0]!, last[1]!, last[2]! + shift[0], last[3]!, last[4]!, last[5]! + shift[1]] : last
-  const found = (m: { matrix: number[]; inliers: number }, mode: Mode): { matrix: number[]; inliers: number; mode: Mode } => {
+  const found = (m: Placed, mode: Mode): { matrix: number[]; inliers: number; score?: number; mode: Mode } => {
     last = steady(moved, m.matrix, shift, width, height)
+    lastScale = toCoarse(last)[0]!
     flowRun = 0
-    return { matrix: last, inliers: m.inliers, mode }
+    return { matrix: last, inliers: m.inliers, score: m.score, mode }
   }
   try {
-    if (desc.rows >= MIN_INLIERS.local && moved) {
+    if (moved && coarseGray) {
+      const m = follow(gray, moved)
+      if (m) return found(m, 'follow')
+    }
+    if (moved && keypoints().desc.rows >= MIN_INLIERS.local) {
       // Around where it should be now, then a wider look (a sharp pan, a zoom).
       for (const pad of [0.5, 1.5]) {
         const near = nearMatrix(moved, width, height, pad)
-        const m = near && solve(desc, pts, near)
+        const m = near && solve(keypoints().desc, keypoints().pts, near)
         if (m) return found(m, 'local')
       }
     }
@@ -394,21 +560,23 @@ function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffe
     }
     last = null
     flowRun = 0
-    if (desc.rows < MIN_INLIERS.local) return { matrix: null, inliers: 0, mode: 'wait' }
     const now = performance.now()
-    // Lost: around you first (the game's map opens on you), the whole zone now and then.
-    if (player && now - lastNear >= GLOBAL_EVERY_MS.near) {
-      lastNear = now
-      const r = (NEAR_PLAYER * (ref?.width ?? 3072)) / 3072
-      const near = inBox(player[0] - r, player[1] - r, player[0] + r, player[1] + r)
-      const m = near && solve(desc, pts, near)
-      if (m) return found(m, 'near')
+    // Lost: around you (the game's map opens on you), at the last size every picture, at every size now and then.
+    if (player && coarseGray && coarse && ref) {
+      const k = coarse.width / ref.width
+      const full = now - lastNear >= GLOBAL_EVERY_MS.near
+      if (full) lastNear = now
+      if (full || lastScale) {
+        const m = lookAround(gray, [player[0] * k, player[1] * k], full)
+        if (m) return found({ ...m, matrix: fromCoarse(m.matrix) }, 'near')
+      }
     }
-    if (now - lastZone >= GLOBAL_EVERY_MS.zone) {
+    // The whole zone by its keypoints: seldom while where you are is known.
+    if (now - lastZone >= (player ? GLOBAL_EVERY_MS.zoneKnown : GLOBAL_EVERY_MS.zone) && keypoints().desc.rows >= MIN_INLIERS.local) {
       lastZone = now
       // On the shipped map (a third of the keypoints of the detail), then in the detail's pixels.
       const on = coarse ?? ref
-      const m = solve(desc, pts, null, on)
+      const m = solve(keypoints().desc, keypoints().pts, null, on)
       if (m && on && ref) {
         const k = on.width / ref.width
         const [a, b, c, d, e, f] = m.matrix as [number, number, number, number, number, number]
@@ -417,7 +585,8 @@ function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffe
     }
     return { matrix: null, inliers: 0, mode: 'wait' }
   } finally {
-    desc.delete()
+    // Set inside keypoints(), which TypeScript does not follow here.
+    ;(kps as { desc: Cv } | null)?.desc.delete()
     keepForFlow(gray)
   }
 }
@@ -461,7 +630,7 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
   // Always answered: the page sends the next picture only once this one is, and a picture OpenCV
   // threw on used to leave it waiting for good (the markers gone until the app restarted).
   try {
-    const out = ref ? match(msg.width, msg.height, msg.rgba, msg.player ?? null) : { matrix: null, inliers: 0, mode: 'wait' as const }
+    const out = ref && msg.width >= 16 && msg.height >= 16 ? match(msg.width, msg.height, msg.rgba, msg.player ?? null) : { matrix: null, inliers: 0, mode: 'wait' as const }
     self.postMessage({ type: 'result', ...out, ms: Math.round(performance.now() - started) })
   } catch (err) {
     last = null

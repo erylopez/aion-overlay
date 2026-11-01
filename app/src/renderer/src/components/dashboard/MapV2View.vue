@@ -35,6 +35,7 @@ const DETAIL: Record<NonNullable<GameMapState['detail']>, string> = {
 
 /** How the last picture was placed, in words. */
 const MODE: Record<string, string> = {
+  follow: 'Following the map',
   local: 'Following the map',
   flow: 'Carried by its movement',
   near: 'Found around you',
@@ -45,6 +46,7 @@ const MODE: Record<string, string> = {
 const CAPTURE: Record<NonNullable<GameMapState['capture']>, string> = {
   starting: 'Starting…',
   on: 'Capturing',
+  slow: 'Capturing the slow way',
   failed: 'Failed (see the map log)',
 }
 const errorAgo = computed(() => {
@@ -142,13 +144,19 @@ const STEPS = [
         </div>
         <dl class="grid min-w-0 flex-1 grid-cols-[auto_1fr] content-start gap-x-4 gap-y-1.5 text-sm">
           <dt class="text-darker">{{ t('Screen capture') }}</dt>
-          <dd :class="state.capture === 'failed' ? 'text-danger' : state.capture === 'on' ? 'text-green' : ''">
+          <dd :class="state.capture === 'failed' ? 'text-danger' : state.capture === 'on' ? 'text-green' : state.capture === 'slow' ? 'text-yellow' : ''">
             {{ state.capture ? t(CAPTURE[state.capture]) : '–' }}<span v-if="state.pictures" class="text-darker"> · {{ t('{n} pictures', { n: state.pictures }) }}</span>
           </dd>
           <dt class="text-darker">{{ t('Now') }}</dt>
           <dd>{{ state.mode ? t(MODE[state.mode] ?? state.mode) : '–' }}</dd>
-          <dt class="text-darker">{{ t('Points that agree') }}</dt>
-          <dd class="tabular-nums">{{ state.inliers || '–' }}</dd>
+          <template v-if="state.score !== undefined">
+            <dt class="text-darker">{{ t('How well it matches') }}</dt>
+            <dd class="tabular-nums">{{ state.score }}%</dd>
+          </template>
+          <template v-else>
+            <dt class="text-darker">{{ t('Points that agree') }}</dt>
+            <dd class="tabular-nums">{{ state.inliers || '–' }}</dd>
+          </template>
           <dt class="text-darker">{{ t('Time per picture') }}</dt>
           <dd class="tabular-nums">{{ state.ms ? `${state.ms} ms` : '–' }}</dd>
           <dt class="text-darker">{{ t('Last problem') }}</dt>

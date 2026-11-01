@@ -140,6 +140,7 @@ export function registerIpc(): void {
   handle('gamemap:log', (line) => gameMap.log(String(line)))
   handle('gamemap:openLog', () => gameMap.openLog())
   handle('gamemap:display', () => regionDisplay())
+  handle('gamemap:grab', (w, h) => gameMap.grab(Math.round(Number(w)), Math.round(Number(h))))
   handle('gamemap:detail', (key, cols, rows) => mapDetail.get(String(key), Number(cols), Number(rows)))
   handle('gamemap:saveFeatures', (key, data) => mapDetail.saveFeatures(String(key), data))
   handle('characters:get', () => characterStore.all())

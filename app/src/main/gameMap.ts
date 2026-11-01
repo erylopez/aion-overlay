@@ -176,13 +176,41 @@ export const gameMap = {
     void shell.openPath(gameMapLogPath())
   },
 
+  /**
+   * The region as a picture, w × h, RGBA: the slow way, for when the screen capture stream gives
+   * no pictures (Windows sometimes stops feeding it after hours). A fresh capture of the screen each
+   * time, so it does not get stuck the way the stream does.
+   */
+  async grab(w: number, h: number): Promise<{ width: number; height: number; rgba: Uint8Array } | null> {
+    const region = settings.get('gameMap').region
+    if (!region || !(w >= 16 && h >= 16 && w <= 2048 && h <= 2048)) return null
+    const d = screen.getDisplayMatching(region)
+    const size = { width: Math.round(d.bounds.width * d.scaleFactor), height: Math.round(d.bounds.height * d.scaleFactor) }
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: size })
+    const shot = (sources.find((s) => s.display_id === String(d.id)) ?? sources[0])?.thumbnail
+    if (!shot || shot.isEmpty()) return null
+    const k = shot.getSize().width / d.bounds.width
+    const cut = shot
+      .crop({ x: Math.round((region.x - d.bounds.x) * k), y: Math.round((region.y - d.bounds.y) * k), width: Math.round(region.width * k), height: Math.round(region.height * k) })
+      .resize({ width: w, height: h, quality: 'good' })
+    const { width, height } = cut.getSize()
+    // The bitmap is BGRA: swapped to RGBA, the picture's order.
+    const rgba = new Uint8Array(cut.toBitmap())
+    for (let i = 0; i < rgba.length; i += 4) {
+      const b = rgba[i]!
+      rgba[i] = rgba[i + 2]!
+      rgba[i + 2] = b
+    }
+    return rgba.length === width * height * 4 ? { width, height, rgba } : null
+  },
+
   /** What the overlay's page last said about the game's map (shown on the Map page). */
   report(next: GameMapState): void {
     // Kept for the log: what changed, and what went wrong (each error once).
     if (next.status !== state.status || next.detail !== state.detail || next.capture !== state.capture) glog(`${next.status}, capture ${next.capture ?? '?'}, ${next.detail ?? '?'} map${next.world ? `, zone ${next.world}` : ''}`)
     if (next.error && next.error.at !== state.error?.at) glog(`${next.error.text}`)
     const merged = { ...next, preview: next.preview === undefined ? state.preview : next.preview }
-    const changed = next.status !== state.status || next.world !== state.world || next.detail !== state.detail || next.mode !== state.mode || next.capture !== state.capture || next.error?.at !== state.error?.at || Math.abs(next.inliers - state.inliers) > 3
+    const changed = next.status !== state.status || next.world !== state.world || next.detail !== state.detail || next.mode !== state.mode || next.capture !== state.capture || next.error?.at !== state.error?.at || Math.abs(next.inliers - state.inliers) > 3 || Math.abs((next.score ?? 0) - (state.score ?? 0)) > 3
     if (changed || next.preview !== undefined) setState(merged)
     else state = merged
   },

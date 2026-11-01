@@ -11,6 +11,7 @@ import { currentWorld, mapImage, nearbyPets, project, useSpawns } from '@/lib/sp
 import { useApp } from '@/stores/app.ts'
 import MapVision from '@/workers/mapVision.ts?worker'
 import type { GameMapState } from '@shared/gameMap.ts'
+import type { InvokeResult } from '@shared/ipc.ts'
 
 /** Pictures are taken at most this often, and one at a time. */
 const FRAME_MS = 120
@@ -18,7 +19,7 @@ const FRAME_MS = 120
 const PICTURE_PX = 720
 /** A picture the worker has not answered in this long is given up on (it never should). */
 const WAIT_MS = 5_000
-/** A match older than this: the map is gone (closed, or the game hidden). */
+/** A match older than this (or than three pictures take, on a slow computer): the map is gone (closed, or the game hidden). */
 const STALE_MS = 900
 const PALETTE = ['#f76b15', '#30a46c', '#0090ff', '#e54666', '#12a594', '#ab4aba', '#8e8c99', '#ffffff']
 
@@ -48,6 +49,7 @@ let busy = false
 /** When the picture in flight was sent: one not answered in WAIT_MS is given up on. */
 let sentAt = 0
 let lastInliers = 0
+let lastScore: number | undefined
 let lastMs = 0
 let lastMode = ''
 /** The last thing that went wrong, for Map V2 and the log. */
@@ -59,7 +61,7 @@ function fail(text: string): void {
 /** A line for the map log (main/gameMapLog.ts). */
 const note = (line: string): void => void api.invoke('gamemap:log', line)
 /** The screen capture's state, and the pictures taken (Map V2 shows them). */
-const capture = ref<'starting' | 'on' | 'failed'>('starting')
+const capture = ref<'starting' | 'on' | 'slow' | 'failed'>('starting')
 let pictures = 0
 /** Window CSS pixels per picture pixel, for the picture in flight. */
 let cssPerPicture = 1
@@ -82,6 +84,7 @@ worker.onmessage = (e: MessageEvent): void => {
   busy = false
   sentAt = 0
   lastInliers = msg.inliers
+  lastScore = msg.score
   lastMs = msg.ms
   lastMode = msg.mode
   modes.set(msg.mode, (modes.get(msg.mode) ?? 0) + 1)
@@ -134,9 +137,25 @@ function within<T>(ms: number, what: string, job: Promise<T>): Promise<T> {
   return Promise.race([job, new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${what}: no answer in ${ms / 1000} s`)), ms))])
 }
 
+/** When the stream last gave a picture: one that stops giving them is started again. */
+let frameAt = 0
+function onFrame(): void {
+  frameAt = Date.now()
+  video.requestVideoFrameCallback(onFrame)
+}
+video.requestVideoFrameCallback(onFrame)
+/** The stream gives no pictures: they are taken the slow way (main/gameMap.ts grab) meanwhile. */
+let slow = false
+/** Stream failures in a row: after two, the slow way. */
+let failures = 0
+/** A capture is being started: no new one until it is done. */
+let starting = false
+
 async function startCapture(): Promise<void> {
-  capture.value = 'starting'
+  if (!slow) capture.value = 'starting'
   for (const track of stream?.getTracks() ?? []) track.stop()
+  stream = null
+  video.srcObject = null
   display = await api.invoke('gamemap:display')
   const region = cfg.value.region
   note(
@@ -148,25 +167,45 @@ async function startCapture(): Promise<void> {
   const s = track?.getSettings()
   note(`capture: got the screen, ${s?.width ?? '?'}x${s?.height ?? '?'} at ${s?.frameRate ?? '?'} fps ("${track?.label ?? '?'}")`)
   // The screen capture can end under us (a display or resolution change): start it again.
+  const mine = stream
   track?.addEventListener('ended', () => {
-    capture.value = 'failed'
+    if (stream !== mine) return
     fail('the screen capture ended: starting it again')
     setTimeout(() => void retryCapture(), 1000)
   })
   video.srcObject = stream
   await within(5_000, 'playing the screen capture', video.play())
-  note(`capture: playing, video ${video.videoWidth}x${video.videoHeight}`)
+  // Playing is not enough: a stuck capture plays a 2×2 nothing. A real picture of the screen, or it failed.
+  const asked = Date.now()
+  while (video.videoWidth < 16 || frameAt < asked) {
+    if (Date.now() - asked > 3_000) throw new Error(`the screen capture gives no pictures (${video.videoWidth}x${video.videoHeight})`)
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  note(`capture: playing, video ${video.videoWidth}x${video.videoHeight}${slow ? ': back from the slow way' : ''}`)
+  slow = false
+  failures = 0
   capture.value = 'on'
 }
 
-/** Start the capture; failed, try again in a while (logged each time). */
+/** Start the capture; failed, try again in a while (logged each time), the slow way meanwhile. */
 async function retryCapture(): Promise<void> {
+  if (starting) return
+  starting = true
   try {
     await startCapture()
   } catch (err) {
-    capture.value = 'failed'
+    for (const track of stream?.getTracks() ?? []) track.stop()
+    stream = null
+    video.srcObject = null
     fail(`no screen capture: ${String(err)}`)
-    setTimeout(() => void retryCapture(), 10_000)
+    if (++failures >= 2 && !slow) {
+      slow = true
+      note('capture: the stream gives no pictures, taking them the slow way meanwhile')
+    }
+    capture.value = slow ? 'slow' : 'failed'
+    setTimeout(() => void retryCapture(), slow ? 60_000 : 10_000)
+  } finally {
+    starting = false
   }
 }
 
@@ -193,7 +232,16 @@ function snap(): void {
     fail('the worker did not answer: going on without it')
     busy = false
   }
-  if (busy || !reference.value || !display || !region || !video.videoWidth) return
+  if (busy || !reference.value || !display || !region) return
+  if (slow) return void grab(region)
+  // A stream that stopped giving pictures (Windows does, after hours): started again.
+  if (capture.value === 'on' && Date.now() - frameAt > 5_000 && !starting) {
+    fail('the screen capture stopped giving pictures: starting it again')
+    capture.value = 'failed'
+    void retryCapture()
+    return
+  }
+  if (capture.value !== 'on' || video.videoWidth < 16) return
   const perDip = video.videoWidth / display.bounds.width
   const sx = (region.x - display.bounds.x) * perDip
   const sy = (region.y - display.bounds.y) * perDip
@@ -208,8 +256,38 @@ function snap(): void {
   }
   pictureCtx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h)
   if (!pictures++) note(`first picture: ${w}x${h} from ${Math.round(sw)}x${Math.round(sh)} at ${Math.round(sx)},${Math.round(sy)} of the ${video.videoWidth}x${video.videoHeight} screen`)
-  const data = pictureCtx.getImageData(0, 0, w, h).data
-  cssPerPicture = region.width / w
+  send(w, h, pictureCtx.getImageData(0, 0, w, h).data, region.width / w)
+}
+
+/** The region the slow way: a fresh picture of the screen from the app, cut down to the region. */
+async function grab(region: { width: number; height: number }): Promise<void> {
+  const fit = Math.min(1, PICTURE_PX / (Math.max(region.width, region.height) * (display?.scaleFactor ?? 1)))
+  const w = Math.max(16, Math.round(region.width * (display?.scaleFactor ?? 1) * fit))
+  const h = Math.max(16, Math.round(region.height * (display?.scaleFactor ?? 1) * fit))
+  busy = true
+  sentAt = Date.now()
+  let got: InvokeResult<'gamemap:grab'> = null
+  try {
+    got = await api.invoke('gamemap:grab', w, h)
+  } catch (err) {
+    fail(`slow capture: ${String(err)}`)
+  }
+  busy = false
+  if (!got || !slow) return
+  const data = new Uint8ClampedArray(got.rgba.buffer, got.rgba.byteOffset, got.rgba.byteLength).slice()
+  // Shown on Map V2 like a stream picture.
+  if (picture.width !== got.width || picture.height !== got.height) {
+    picture.width = got.width
+    picture.height = got.height
+  }
+  pictureCtx.putImageData(new ImageData(data.slice(), got.width, got.height), 0, 0)
+  if (!pictures++) note(`first picture (slow way): ${got.width}x${got.height}`)
+  send(got.width, got.height, data, region.width / got.width)
+}
+
+/** A picture to the worker, with where you are. */
+function send(w: number, h: number, data: Uint8ClampedArray<ArrayBuffer>, css: number): void {
+  cssPerPicture = css
   busy = true
   sentAt = Date.now()
   // Where you are on the zone map: a lost map is looked for around you first (it opens on you).
@@ -234,7 +312,7 @@ function icon(src: string): HTMLImageElement {
 }
 
 const now = ref(Date.now())
-const found = computed(() => !!placed.value && now.value - placed.value.at < STALE_MS)
+const found = computed(() => !!placed.value && now.value - placed.value.at < Math.max(slow ? 3 * STALE_MS : STALE_MS, 3 * lastMs))
 
 /** Tracked pets with spawns here: pinned, then those around you; each its colour. */
 const pets = computed(() => {
@@ -272,7 +350,7 @@ function draw(): void {
     ctx.setLineDash([])
     ctx.font = '600 11px Inter Variable, Segoe UI, sans-serif'
     ctx.textAlign = 'left'
-    const label = `${W}×${H} · ${found.value ? 'map found' : capture.value === 'on' ? 'looking' : `capture ${capture.value}`}`
+    const label = `${W}×${H} · ${found.value ? 'map found' : capture.value === 'on' ? 'looking' : capture.value === 'slow' ? 'looking (slow capture)' : `capture ${capture.value}`}`
     ctx.fillStyle = 'rgba(0,0,0,0.7)'
     ctx.fillRect(4, 4, ctx.measureText(label).width + 10, 18)
     ctx.fillStyle = '#ffffff'
@@ -368,6 +446,7 @@ function report(): void {
     status: !world.value ? 'nomap' : found.value ? 'found' : 'searching',
     world: worldId.value,
     inliers: found.value ? lastInliers : 0,
+    score: found.value && lastScore !== undefined ? Math.round(lastScore * 100) : undefined,
     ms: lastMs,
     detail: detail.value,
     mode: lastMode,

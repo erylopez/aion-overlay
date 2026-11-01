@@ -44,6 +44,8 @@ export interface InvokeChannels {
   'gamemap:saveFeatures': { args: [key: string, data: ArrayBuffer]; result: void }
   /** The display the region is on (the overlay cuts the region out of its picture). */
   'gamemap:display': { args: []; result: { bounds: Rect; scaleFactor: number } | null }
+  /** The region as a w × h RGBA picture, the slow way (when the screen capture stream is stuck). */
+  'gamemap:grab': { args: [w: number, h: number]; result: { width: number; height: number; rgba: Uint8Array } | null }
   /** Your characters (the Characters page). */
   'characters:get': { args: []; result: Characters }
   /** Ask NCSoft for a character's combat power and portrait again. */
@@ -245,7 +247,7 @@ export interface Bridge {
 export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'app:info', 'app:quit', 'app:openPath',
   'settings:all', 'settings:set',
-  'tracker:get', 'gamemap:pick', 'gamemap:setRegion', 'gamemap:report', 'gamemap:get', 'gamemap:log', 'gamemap:openLog', 'gamemap:restart', 'gamemap:detail', 'gamemap:saveFeatures', 'gamemap:display', 'characters:get', 'characters:refresh', 'characters:forget', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession', 'tracker:clearPvp',
+  'tracker:get', 'gamemap:pick', 'gamemap:setRegion', 'gamemap:report', 'gamemap:get', 'gamemap:log', 'gamemap:openLog', 'gamemap:restart', 'gamemap:detail', 'gamemap:saveFeatures', 'gamemap:display', 'gamemap:grab', 'characters:get', 'characters:refresh', 'characters:forget', 'tracker:setSouls', 'tracker:setName', 'tracker:restart', 'tracker:resetSession', 'tracker:clearPvp',
   'killfeed:open', 'killfeed:close', 'killfeed:moveTo', 'killfeed:dragEnd', 'killfeed:resize',
   'timerbar:moveTo', 'timerbar:dragEnd', 'timerbar:resize',
   'bubble:moveTo', 'bubble:dragEnd', 'panel:toggle', 'panel:hide', 'panel:minimize', 'panel:maximize',

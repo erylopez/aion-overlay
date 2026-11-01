@@ -9,6 +9,8 @@ export interface GameMapState {
   world: number | null
   /** How many points agreed on where the map is (more is surer). */
   inliers: number
+  /** Or, found by comparing the picture whole, how well it compared (0 to 100). */
+  score?: number
   /** How long a match takes, in ms. */
   ms: number
   /**
@@ -20,8 +22,8 @@ export interface GameMapState {
   mode?: string
   /** The last thing that went wrong (capture, OpenCV), and when. */
   error?: { at: number; text: string } | null
-  /** The screen capture: being started, running, or not to be had (see the map log). */
-  capture?: 'starting' | 'on' | 'failed'
+  /** The screen capture: being started, running, running the slow way (the stream gave no pictures), or not to be had (see the map log). */
+  capture?: 'starting' | 'on' | 'slow' | 'failed'
   /** Pictures taken since the overlay opened. */
   pictures?: number
   /** What the overlay sees, now and then: a small JPEG (Map V2 shows it). */
