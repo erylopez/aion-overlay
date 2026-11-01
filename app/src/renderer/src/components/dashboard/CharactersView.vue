@@ -211,8 +211,8 @@ function corridorTitle(list: CorridorState[]): string {
               <th class="w-44 whitespace-nowrap px-3 text-left font-medium">
                 <span class="flex items-center gap-1.5"><img :src="ICONS.ticket" alt="" draggable="false" class="size-5" />{{ t('Ascension Trial') }}</span>
               </th>
-              <th class="w-32 whitespace-nowrap px-3 text-left font-medium" :title="t('The Abyss\'s Artifact corridors, back on Mondays, Thursdays and Saturdays at 21:00.')">{{ t('Corridors') }}</th>
-              <th class="w-36 whitespace-nowrap pr-4 text-right font-medium">{{ t('Last read') }}</th>
+              <th class="w-48 whitespace-nowrap px-3 text-left font-medium" :title="t('The Abyss\'s Artifact corridors, back on Mondays, Thursdays and Saturdays at 21:00.')">{{ t('Corridors') }}</th>
+              <th class="w-24 whitespace-nowrap pr-4 text-right font-medium">{{ t('Last read') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-[color:var(--line)]">
@@ -281,7 +281,7 @@ function corridorTitle(list: CorridorState[]): string {
                     </span>
                   </div>
                 </td>
-                <td class="pr-4 text-right text-xs text-darker">{{ ago(r.c.counters.at) }}</td>
+                <td class="whitespace-nowrap pr-4 text-right text-xs text-darker">{{ ago(r.c.counters.at) }}</td>
               </template>
               <td v-else colspan="5" class="px-3 py-2 text-xs">
                 <span class="inline-flex items-center gap-1.5 rounded-full border border-dashed border-light px-2.5 py-1 text-darker">

@@ -82,17 +82,20 @@ export function nextCorridorReset(now: number): number {
 
 /**
  * A corridor now: open (its passage time is there), done (none, and you were in the Abyss since
- * the reset, where it would have been given), or unknown (not seen since the reset: likely open).
+ * the reset, where it would have been given, or another corridor has its time), or unknown (not seen since the reset: likely open).
  */
 export type CorridorState = 'open' | 'done' | 'unknown'
 
 export function corridorStates(log: CorridorLog | undefined, now: number): CorridorState[] {
   const since = corridorReset(now)
+  // The passage times are all given at once: one seen since the reset means they were, and one
+  // without its time since then has been done.
+  const given = (log?.abyssAt ?? 0) >= since || CORRIDORS.some(({ id }) => (log?.left[id]?.at ?? 0) >= since && log!.left[id]!.ms > 0)
   return CORRIDORS.map(({ id }) => {
     const seen = log?.left[id]
     if (!seen || seen.at < since) return 'unknown'
     if (seen.ms > 0) return 'open'
-    return (log?.abyssAt ?? 0) >= since ? 'done' : 'unknown'
+    return given ? 'done' : 'unknown'
   })
 }
 
