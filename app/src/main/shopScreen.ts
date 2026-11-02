@@ -1,19 +1,23 @@
 /**
  * Whether the Black Cloud Merchant's screen is still up, told by looking at the screen: the game
  * says nothing when the shop is closed, and its keys (Escape) are hidden from the app (the game
- * runs as administrator). A small grey picture of the screen is kept a moment after a tab opens; once
- * most of the screen differs from it, twice in a row, the shop is gone. The merchant window's own
- * spot is left out (it changes with the tabs). Only while the merchant window is up, and the game in
- * front: an alt-tab away and back takes the picture again.
+ * runs as administrator). A small grey picture of the screen is kept right after a tab opens, and
+ * kept up to date while the screen stays much the same (the cards filling in, a tooltip); once most
+ * of the screen differs from it, twice in a row, the shop is gone (about half a second). The merchant window's own
+ * spot is left out (it changes with the tabs). Only while the merchant window is open: it stops when
+ * the window closes (its X, the setting off), and takes no pictures while the window is hidden or
+ * the game is not in front (an alt-tab away and back takes the picture again).
  */
 import { desktopCapturer, screen, type Rectangle } from 'electron'
 
 /** The picture: small, and smoothed by the shrinking (an item's tooltip, a player walking by, barely count). */
 const W = 64
 const H = 36
-const EVERY_MS = 700
-/** The shop's screen settled (it opens with a fade) before its picture is taken. */
-const SETTLE_MS = 1_500
+const EVERY_MS = 250
+/** The tab's packet comes as its screen shows: a moment for it to be drawn before its picture is taken. */
+const SETTLE_MS = 300
+/** The screen still the shop's: this share of it changed at most, and the picture is taken again. */
+const SAME_SHARE = 0.15
 /** A spot changed: its grey moved this much (0-255). */
 const SPOT_DIFF = 28
 /** The shop is gone: this share of the screen changed... */
@@ -22,6 +26,7 @@ const GONE_SHARE = 0.4
 const GONE_LOOKS = 2
 
 interface Watch {
+  open: () => boolean
   /** The merchant window's place while it shows, else null (nothing to close: not looked at). */
   window: () => Rectangle | null
   gameInFront: () => boolean
@@ -53,6 +58,7 @@ export function stopShopScreen(): void {
 
 async function look(): Promise<void> {
   if (!watch || busy) return
+  if (!watch.open()) return stopShopScreen()
   const window = watch.window()
   if (!window || !watch.gameInFront()) {
     reference = null
@@ -78,6 +84,7 @@ async function look(): Promise<void> {
     }
     const share = counted ? changed / counted : 0
     looks = share >= GONE_SHARE ? looks + 1 : 0
+    if (share <= SAME_SHARE) reference = now
     if (looks >= GONE_LOOKS) {
       const gone = watch.gone
       stopShopScreen()

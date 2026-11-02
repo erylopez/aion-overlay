@@ -466,6 +466,11 @@ function refreshMerchant(): void {
   }
 }
 
+/** The merchant window is open (shown, or hidden while there is nothing worth buying). */
+export function merchantOpen(): boolean {
+  return alive(merchant)
+}
+
 /** Where the merchant window is while it shows, else null. */
 export function merchantBounds(): Rectangle | null {
   return alive(merchant) && merchant.isVisible() ? merchant.getBounds() : null

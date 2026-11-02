@@ -25,7 +25,7 @@ import { startTimers } from './timers.ts'
 import { killTrackerNow, log, startNpcapWatch, stopTracker, tracker } from './tracker.ts'
 import { tr } from './i18n.ts'
 import { createTray, setTrayTooltip } from './tray.ts'
-import { applyWindowSettings, closeMerchant, markQuitting, merchantBounds, refreshHud, setForeground, showMerchant, showPanel, startOnTopWatch } from './windows.ts'
+import { applyWindowSettings, closeMerchant, markQuitting, merchantBounds, merchantOpen, refreshHud, setForeground, showMerchant, showPanel, startOnTopWatch } from './windows.ts'
 
 // The name is also the data folder's (%APPDATA%\<name>): the old one is moved across once.
 app.setName(DISPLAY_NAME)
@@ -82,10 +82,11 @@ if (!app.requestSingleInstanceLock()) {
     tracker.onShop(() => {
       showMerchant()
       shopAt = { at: Date.now(), position: String(tracker.nearby().position) }
-      watchShopScreen({ window: merchantBounds, gameInFront: () => gameInFront, gone: (share) => leftShop(`the shop is gone from the screen (${Math.round(share * 100)}% changed)`) })
+      if (merchantOpen()) watchShopScreen({ open: merchantOpen, window: merchantBounds, gameInFront: () => gameInFront, gone: (share) => leftShop(`the shop is gone from the screen (${Math.round(share * 100)}% changed)`, true) })
     })
-    const leftShop = (why: string): void => {
-      if (!shopAt || Date.now() - shopAt.at < SHOP_SETTLE_MS) return
+    // `seen`: told by the screen itself, so taken at once (the settling is for the packets' signs).
+    const leftShop = (why: string, seen = false): void => {
+      if (!shopAt || (!seen && Date.now() - shopAt.at < SHOP_SETTLE_MS)) return
       shopAt = null
       stopShopScreen()
       log(`merchant window closed: ${why}`)
