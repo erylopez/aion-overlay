@@ -33,6 +33,9 @@ export const METER_HEIGHT = [120, 1200] as const
 /** The map overlay's: its width, and its map's height. */
 export const MINIMAP_WIDTH = [160, 900] as const
 export const MINIMAP_HEIGHT = [120, 900] as const
+/** The kill feed's size, dragged from its corner (never narrower than its title bar). */
+export const KILLFEED_WIDTH = [240, 900] as const
+export const KILLFEED_HEIGHT = [60, 900] as const
 
 export interface Settings {
   /** Where the floating icon sits, in screen DIPs; null = bottom right of the primary display. */
@@ -118,8 +121,11 @@ export interface Settings {
   timerBar: { enabled: boolean; position: Point | null; opacity: number }
 
   /** The kill feed over the game: open (from the PvP page), and where (null = top right). */
-  /** The kill feed overlay; `opacity` is its background's (0: none, the text glows on the game); `target`: your target under it. */
-  killFeed: { open: boolean; position: Point | null; opacity: number; collapsed: boolean; target: boolean }
+  /**
+   * The kill feed overlay; `opacity` is its background's (0: none, the text glows on the game); `target`: your target under it;
+   * `width` and `height` as dragged from its corner (null: sized to what it shows).
+   */
+  killFeed: { open: boolean; position: Point | null; opacity: number; collapsed: boolean; target: boolean; width: number | null; height: number | null }
   /**
    * The Enemies overlay: players of the other faction in view, and a sound when one comes. Its
    * background's opacity (0: none), minimized, and its sound: on, which (shared/sounds.ts), how
@@ -288,7 +294,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   merchantWindow: null,
   detailsWindow: null,
   timerBar: { enabled: true, position: null, opacity: 0.92 },
-  killFeed: { open: false, position: null, opacity: 0.9, collapsed: false, target: true },
+  killFeed: { open: false, position: null, opacity: 0.9, collapsed: false, target: true, width: null, height: null },
   enemies: { enabled: true, position: null, opacity: 0.75, collapsed: false, mapPins: true, sound: true, pvpOnly: true, soundId: 'enemy-spotted', volume: 0.7, customName: null },
   skills: { enabled: true, position: null, rows: 6, opacity: 0.92 },
   dummy: { overlay: true, position: null, autoStart: true, goal: 'time', limitMs: 60_000, damageGoal: 10e6, collapsed: false },
@@ -467,6 +473,8 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
         opacity: num(v.opacity, 0, 1, d.killFeed.opacity),
         collapsed: bool(v.collapsed, d.killFeed.collapsed),
         target: bool(v.target, d.killFeed.target),
+        width: v.width === null || v.width === undefined ? null : Math.round(num(v.width, KILLFEED_WIDTH[0], KILLFEED_WIDTH[1], 300)),
+        height: v.height === null || v.height === undefined ? null : Math.round(num(v.height, KILLFEED_HEIGHT[0], KILLFEED_HEIGHT[1], 200)),
       } as Settings[K]
     }
     case 'skills': {

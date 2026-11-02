@@ -901,6 +901,8 @@ export const ES: Record<string, string> = {
   'Where you last died in PvP is marked with a skull on the maps (Map page, map overlay, Map V2), and the kill feed\'s skull opens a small map of it.': 'Dónde moriste por última vez en PvP se marca con una calavera en los mapas (página Mapa, overlay del mapa, Mapa V2), y la calavera del killfeed abre un mapita con el lugar.',
   'New version': 'Nueva versión',
   'Restart to update': 'Reiniciá para actualizar',
+  'The kill feed no longer wraps its title bar onto two lines, and it can be resized from its corner (a double-click there resets it).': 'El killfeed ya no parte su barra de título en dos líneas, y se puede cambiar de tamaño desde su esquina (doble click ahí lo resetea).',
+  'The Black Cloud Merchant\'s pets window goes away when you press Escape in the game, and comes back when you open a tab of the shop again.': 'La ventana de pets del Black Cloud Merchant se va cuando apretás Escape en el juego, y vuelve cuando abrís de nuevo una pestaña de la tienda.',
   'Waiting for the screen to change': 'Esperando que cambie la pantalla',
   'No map on screen': 'No hay mapa en pantalla',
   'What the overlay sees': 'Lo que ve el overlay',

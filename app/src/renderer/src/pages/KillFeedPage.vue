@@ -8,15 +8,18 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, toRaw, watch } from 'vue'
 import ClassIcon from '@/components/ClassIcon.vue'
 import CollapseButton from '@/components/CollapseButton.vue'
+import ResizeGrip from '@/components/ResizeGrip.vue'
 import SkullMark from '@/components/SkullMark.vue'
 import WorldMap from '@/components/WorldMap.vue'
 import { bridge } from '@/lib/bridge.ts'
 import { t } from '@/lib/i18n.ts'
 import { panelStyle } from '@/lib/overlayLook.ts'
+import { clampTo, cornerResize } from '@/lib/cornerResize.ts'
 import { loadSpawns, type SpawnData } from '@/lib/spawns.ts'
 import { windowDrag } from '@/lib/windowDrag.ts'
 import { useApp } from '@/stores/app.ts'
 import { serverTag } from '@shared/servers.ts'
+import { KILLFEED_HEIGHT, KILLFEED_WIDTH } from '@shared/settings.ts'
 import { lastDeath, type PvpKill } from '@shared/tracker.ts'
 
 const SHOW_MS = 8000
@@ -91,6 +94,28 @@ const ago = (at: number): string => {
   return m < 1 ? t('just now') : m < 60 ? t('{n} min ago', { n: m }) : t('{n} h ago', { n: Math.round(m / 60) })
 }
 
+/**
+ * Its size, dragged from the corner: the width, and the height once the drag goes up or down (null:
+ * sized to what it shows). Never narrower than the title bar, whatever is set.
+ */
+const live = ref<{ width: number; height: number | null } | null>(null)
+const size = computed(() => live.value ?? { width: cfg.value.width, height: cfg.value.height })
+const card = ref<HTMLElement | null>(null)
+const onGrip = cornerResize({
+  start: () => ({ width: card.value?.offsetWidth ?? 300, height: card.value?.offsetHeight ?? 100 }),
+  move: (s, vertical) => {
+    const tall = !cfg.value.collapsed && (vertical || cfg.value.height !== null)
+    live.value = { width: clampTo(s.width, KILLFEED_WIDTH), height: tall ? clampTo(s.height, KILLFEED_HEIGHT) : cfg.value.height }
+  },
+  end: () => {
+    if (live.value) void store.set('killFeed', { ...cfg.value, ...live.value })
+    live.value = null
+  },
+})
+const resetSize = (): void => void store.set('killFeed', { ...cfg.value, width: null, height: null })
+/** A height is set (and it is not minimized): the death map fills what is left. */
+const tall = computed(() => size.value.height !== null && !cfg.value.collapsed)
+
 /** Minimized: the title bar only (the kills and deaths), no kill lines. */
 const toggleCollapsed = (): void => void store.set('killFeed', { ...cfg.value, collapsed: !cfg.value.collapsed })
 
@@ -104,7 +129,7 @@ function report(): void {
   sent = key
   void bridge().invoke('killfeed:resize', { width: r.width, height: r.height })
 }
-watch([lines, counts, target, () => cfg.value.collapsed, showDeath, deathWorld], () => void nextTick(report), { deep: true })
+watch([lines, counts, target, () => cfg.value.collapsed, showDeath, deathWorld, size], () => void nextTick(report), { deep: true })
 let observer: ResizeObserver | null = null
 onMounted(() => {
   observer = new ResizeObserver(report)
@@ -117,8 +142,17 @@ onBeforeUnmount(() => observer?.disconnect())
 <template>
   <div class="inline-block">
     <div ref="root" class="inline-block">
-      <div class="text-glow m-1.5 w-[300px] rounded-lg border" :style="panelStyle(cfg.opacity)">
-        <header class="flex cursor-move items-center gap-2 px-2.5 py-1.5" :title="t('Drag to move')" @pointerdown="drag.onPointerDown">
+      <div
+        ref="card"
+        :class="['text-glow group relative m-1.5 flex flex-col rounded-lg border', size.width === null && 'w-[300px]']"
+        :style="{
+          ...panelStyle(cfg.opacity),
+          minWidth: 'max-content',
+          width: size.width !== null ? `${size.width}px` : undefined,
+          height: tall ? `${size.height}px` : undefined,
+        }"
+      >
+        <header class="flex shrink-0 cursor-move items-center gap-2 whitespace-nowrap px-2.5 py-1.5" :title="t('Drag to move')" @pointerdown="drag.onPointerDown">
           <svg viewBox="0 0 16 16" class="size-3.5 text-danger" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
             <path d="M3 13 13 3M9.5 3H13v3.5M3 3l4 4M13 13l-3-3" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
@@ -163,57 +197,61 @@ onBeforeUnmount(() => observer?.disconnect())
             </svg>
           </button>
         </header>
-        <div v-if="showDeath && death" :class="['px-2.5 py-1.5', cfg.opacity > 0 && 'border-t border-card']" @pointerdown.stop>
-          <div class="mb-1 flex min-w-0 items-baseline gap-1.5 text-xs">
-            <span class="truncate font-semibold text-default">{{ deathWorld?.name ?? t('Loading map…') }}</span>
-            <span class="shrink-0 text-darker">{{ ago(death.at) }}</span>
-            <span class="ml-auto min-w-0 truncate text-darker">{{ t('by {name}', { name: death.killer.name }) }}</span>
+        <!-- Below the title bar: as wide as the card (its width is the title bar's), never widening it. -->
+        <div class="flex min-h-0 w-0 min-w-full flex-1 flex-col overflow-hidden">
+          <div v-if="showDeath && death" :class="['px-2.5 py-1.5', cfg.opacity > 0 && 'border-t border-card', tall && 'flex min-h-0 flex-1 flex-col']" @pointerdown.stop>
+            <div class="mb-1 flex min-w-0 items-baseline gap-1.5 text-xs">
+              <span class="truncate font-semibold text-default">{{ deathWorld?.name ?? t('Loading map…') }}</span>
+              <span class="shrink-0 text-darker">{{ ago(death.at) }}</span>
+              <span class="ml-auto min-w-0 truncate text-darker">{{ t('by {name}', { name: death.killer.name }) }}</span>
+            </div>
+            <div :class="['overflow-hidden rounded border border-card', tall ? 'min-h-[80px] flex-1' : 'h-[220px]']">
+              <WorldMap
+                v-if="deathWorld"
+                :world="deathWorld"
+                :layers="[]"
+                :focus="[death.place.position]"
+                :death="death.place.position"
+                :you="store.nearby.world === death.place.world ? store.nearby.position : null"
+                :hint="false"
+              />
+            </div>
           </div>
-          <div class="h-[220px] overflow-hidden rounded border border-card">
-            <WorldMap
-              v-if="deathWorld"
-              :world="deathWorld"
-              :layers="[]"
-              :focus="[death.place.position]"
-              :death="death.place.position"
-              :you="store.nearby.world === death.place.world ? store.nearby.position : null"
-              :hint="false"
-            />
-          </div>
-        </div>
-        <div
-          v-if="target && !cfg.collapsed"
-          :class="['flex min-w-0 items-center gap-1.5 px-2.5 py-1.5', cfg.opacity > 0 && 'border-t border-card']"
-          :title="t('Your target: {class}, Lv{level}, gear score {gs}', { class: target.className ?? t('class unknown'), level: target.level, gs: target.gearScore }) + (target.legion ? `, <${target.legion}>` : '')"
-        >
-          <ClassIcon :class-name="target.className" :size="20" />
-          <span :class="['truncate text-sm font-semibold', target.enemy ? 'text-danger' : 'text-default']">{{ target.name }}</span>
-          <span class="shrink-0 text-[10px] text-yellow">[{{ serverTag(target.server) }}]</span>
-          <span v-if="target.combatPower" class="ml-auto shrink-0 text-xs font-semibold tabular-nums text-yellow">{{ cp(target.combatPower) }}</span>
-        </div>
-        <TransitionGroup
-          v-if="lines.length && !cfg.collapsed"
-          tag="div"
-          name="toast"
-          :class="['space-y-1 px-2.5 py-1.5', cfg.opacity > 0 && 'border-t border-card']"
-        >
           <div
-            v-for="k in lines"
-            :key="`${k.at}-${k.killer.name}`"
-            :class="['flex min-w-0 items-center gap-1 text-xs', k.fight && 'cursor-pointer hover:underline']"
-            :title="k.fight ? t('Show the fight') : undefined"
-            @pointerdown.stop
-            @click="k.fight && bridge().invoke('details:open', { kind: 'pvp', id: k.fight })"
+            v-if="target && !cfg.collapsed"
+            :class="['flex min-w-0 items-center gap-1.5 px-2.5 py-1.5', cfg.opacity > 0 && 'border-t border-card']"
+            :title="t('Your target: {class}, Lv{level}, gear score {gs}', { class: target.className ?? t('class unknown'), level: target.level, gs: target.gearScore }) + (target.legion ? `, <${target.legion}>` : '')"
           >
-            <ClassIcon :class-name="k.killer.className" :size="14" />
-            <span :class="['truncate font-semibold', k.mine ? 'text-green' : 'text-dark']">{{ k.killer.name }}</span>
-            <span v-if="tag(k.killer.server)" class="shrink-0 text-[10px] text-yellow">[{{ tag(k.killer.server) }}]</span>
-            <span class="shrink-0 text-darker">→</span>
-            <ClassIcon :class-name="k.victim?.className" :size="14" />
-            <span :class="['truncate font-semibold', k.died ? 'text-danger' : 'text-dark']">{{ k.victim?.name ?? t('a player') }}</span>
-            <span v-if="k.victim && tag(k.victim.server)" class="shrink-0 text-[10px] text-yellow">[{{ tag(k.victim.server) }}]</span>
+            <ClassIcon :class-name="target.className" :size="20" />
+            <span :class="['truncate text-sm font-semibold', target.enemy ? 'text-danger' : 'text-default']">{{ target.name }}</span>
+            <span class="shrink-0 text-[10px] text-yellow">[{{ serverTag(target.server) }}]</span>
+            <span v-if="target.combatPower" class="ml-auto shrink-0 text-xs font-semibold tabular-nums text-yellow">{{ cp(target.combatPower) }}</span>
           </div>
-        </TransitionGroup>
+          <TransitionGroup
+            v-if="lines.length && !cfg.collapsed"
+            tag="div"
+            name="toast"
+            :class="['space-y-1 px-2.5 py-1.5', cfg.opacity > 0 && 'border-t border-card']"
+          >
+            <div
+              v-for="k in lines"
+              :key="`${k.at}-${k.killer.name}`"
+              :class="['flex min-w-0 items-center gap-1 text-xs', k.fight && 'cursor-pointer hover:underline']"
+              :title="k.fight ? t('Show the fight') : undefined"
+              @pointerdown.stop
+              @click="k.fight && bridge().invoke('details:open', { kind: 'pvp', id: k.fight })"
+            >
+              <ClassIcon :class-name="k.killer.className" :size="14" />
+              <span :class="['truncate font-semibold', k.mine ? 'text-green' : 'text-dark']">{{ k.killer.name }}</span>
+              <span v-if="tag(k.killer.server)" class="shrink-0 text-[10px] text-yellow">[{{ tag(k.killer.server) }}]</span>
+              <span class="shrink-0 text-darker">→</span>
+              <ClassIcon :class-name="k.victim?.className" :size="14" />
+              <span :class="['truncate font-semibold', k.died ? 'text-danger' : 'text-dark']">{{ k.victim?.name ?? t('a player') }}</span>
+              <span v-if="k.victim && tag(k.victim.server)" class="shrink-0 text-[10px] text-yellow">[{{ tag(k.victim.server) }}]</span>
+            </div>
+          </TransitionGroup>
+        </div>
+        <ResizeGrip :active="!!live" @grab="onGrip" @reset="resetSize" />
       </div>
     </div>
   </div>

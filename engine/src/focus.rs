@@ -1,6 +1,8 @@
 //! Which program is in front: the game, the overlay app itself, or anything
 //! else. The app hides its overlays while it is anything else (an alt-tab to
-//! Discord) and shows them again when the game comes back.
+//! Discord) and shows them again when the game comes back. Escape pressed in
+//! the game is reported too (the merchant window goes away with the shop); it
+//! is only looked at, so the game still gets it.
 //!
 //! The game is recognised as A2Tools DPS Meter does it (Windows only; elsewhere
 //! nothing is reported and the app never hides):
@@ -15,6 +17,8 @@ use serde_json::json;
 use crate::{emit, event};
 
 const POLL: Duration = Duration::from_millis(250);
+/// Often enough to see a quick tap of Escape (a key is down for ~80 ms).
+const KEY_POLL: Duration = Duration::from_millis(30);
 
 // Off Windows nothing is in front to tell apart.
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -48,10 +52,26 @@ pub fn watch(app_pid: Option<u32>) {
             std::thread::sleep(POLL);
         }
     });
+    std::thread::spawn(move || {
+        let mut was_down = false;
+        loop {
+            let down = escape_down();
+            if down && !was_down && foreground(app_pid) == Some(Foreground::Game) {
+                emit(&event("key", json!({ "key": "escape" })));
+            }
+            was_down = down;
+            std::thread::sleep(KEY_POLL);
+        }
+    });
 }
 
 #[cfg(not(windows))]
 const SUPPORTED: bool = false;
+
+#[cfg(not(windows))]
+fn escape_down() -> bool {
+    false
+}
 
 #[cfg(not(windows))]
 fn foreground(_app_pid: Option<u32>) -> Option<Foreground> {
@@ -60,6 +80,14 @@ fn foreground(_app_pid: Option<u32>) -> Option<Foreground> {
 
 #[cfg(windows)]
 const SUPPORTED: bool = true;
+
+/// Escape is held, or was pressed since the last look (a tap between two looks).
+#[cfg(windows)]
+fn escape_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
+    let state = unsafe { GetAsyncKeyState(VK_ESCAPE.0 as i32) } as u16;
+    state & 0x8001 != 0
+}
 
 /// The window in front, or None when there is none.
 #[cfg(windows)]

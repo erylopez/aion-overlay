@@ -71,7 +71,8 @@ if (!app.requestSingleInstanceLock()) {
     tracker.onEvent('focus', (ev) => setForeground(ev['game'] === true, ev['app'] === true))
     // A tab of the Black Cloud Merchant was opened: its pets worth buying, in their own window.
     // The game says nothing when its window is closed, so it closes when you are plainly out of it:
-    // you moved or killed something, or Map V2 found the game's map again (the shop covers it).
+    // you moved or killed something, Map V2 found the game's map again (the shop covers it), or
+    // you pressed Escape. A tab opened again brings it back.
     let shopAt: { at: number; position: string } | null = null
     tracker.onShop(() => {
       showMerchant()
@@ -85,6 +86,12 @@ if (!app.requestSingleInstanceLock()) {
     }
     tracker.onEvent('nearby', () => shopAt && String(tracker.nearby().position) !== shopAt.position && leftShop('you moved'))
     tracker.onEvent('combat', () => leftShop('you are fighting'))
+    tracker.onEvent('key', (ev) => {
+      if (ev['key'] !== 'escape' || !shopAt) return
+      shopAt = null
+      log('merchant window closed: Escape')
+      closeMerchant()
+    })
     onGameMapStatus((status, was) => status === 'found' && was !== 'found' && leftShop("the game's map is back"))
     tracker.onStatus((status) => {
       refreshHud()
