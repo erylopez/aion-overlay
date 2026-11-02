@@ -13,7 +13,7 @@ import { playSound } from '@/lib/sound.ts'
 import { windowDrag } from '@/lib/windowDrag.ts'
 import { useApp } from '@/stores/app.ts'
 import { serverTag } from '@shared/servers.ts'
-import type { Enemy } from '@shared/tracker.ts'
+import { canAttack, type Enemy } from '@shared/tracker.ts'
 
 const store = useApp()
 const api = bridge()
@@ -27,8 +27,7 @@ const SAMPLE = computed<Enemy[]>(() => [
 ])
 /** Nobody around while the dashboard is up: a sample to place it by. */
 const preview = computed(() => !store.enemies.length && store.panelVisible)
-/** Can attack you: PvP on, or anyone in the Abyss, where everyone fights. */
-const threat = (e: Enemy): boolean => !!e.pvp || !!e.openPvp
+const threat = (e: Enemy): boolean => canAttack(e)
 /** Those who can attack you first. */
 const list = computed(() => (store.enemies.length ? [...store.enemies].sort((a, b) => Number(threat(b)) - Number(threat(a))) : preview.value ? SAMPLE.value : []))
 

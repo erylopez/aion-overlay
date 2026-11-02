@@ -20,7 +20,7 @@ import { displayName } from '@/lib/petDb.ts'
 import { currentWorld, nearbyPets, useSpawns } from '@/lib/spawns.ts'
 import { plural, t } from '@/lib/i18n.ts'
 import { useApp } from '@/stores/app.ts'
-import { blankPet, MAX_LEVEL } from '@shared/tracker.ts'
+import { blankPet, lastDeath, MAX_LEVEL } from '@shared/tracker.ts'
 import { SETTINGS_DEFAULTS } from '@shared/settings.ts'
 
 const PALETTE = ['#f76b15', '#30a46c', '#0090ff', '#e54666', '#12a594', '#ab4aba', '#ffc53d', '#ffffff']
@@ -41,6 +41,11 @@ const zones = computed(() =>
         .sort((a, b) => a.label.localeCompare(b.label))
     : [],
 )
+/** Where you last died, when it was in the zone shown. */
+const death = computed(() => {
+  const d = lastDeath(store.pvp)
+  return d && d.place.world === worldId.value ? d.place.position : null
+})
 const inZone = computed(() => worldId.value !== null && worldId.value === here.value)
 
 const page = computed(() => store.settings.mapPage)
@@ -155,10 +160,11 @@ const pct = (v: number): string => `${Math.round(v * 100)}%`
           <template v-else-if="inZone">{{ t('You are in this zone; where exactly is not known yet.') }}</template>
           <template v-else-if="here !== null">{{ t('You are in {zone}.', { zone: spawns?.worlds[here]?.name ?? t('another zone') }) }}</template>
           <template v-else>{{ t('Where you are is not known yet: it is read as you enter a zone.') }}</template>
+          <p v-if="death" class="mt-1">{{ t('The skull: where you last died.') }}</p>
         </div>
       </aside>
       <div class="h-[calc(100vh-15rem)] min-h-[420px] overflow-hidden rounded-xl border border-card">
-        <WorldMap v-if="world" :world="world" :layers="layers" :focus="focus" :you="you" :cubes="cubes" :icons="icons" />
+        <WorldMap v-if="world" :world="world" :layers="layers" :focus="focus" :you="you" :cubes="cubes" :icons="icons" :death="death" />
         <div v-else class="flex h-full items-center justify-center text-sm text-darker">{{ t('Loading maps…') }}</div>
       </div>
     </div>

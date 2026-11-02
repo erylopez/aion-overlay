@@ -91,8 +91,12 @@ const main = ref<HTMLElement | null>(null)
 watch(page, () => main.value?.scrollTo({ top: 0 }))
 
 const maximized = ref(false)
-/** An update found by a check: a pill in the title bar until it is installed. */
+/**
+ * An update found (main/updater.ts looks now and then): a yellow pill by the app's name and the
+ * Updates page glowing yellow in the sidebar, until it is installed.
+ */
 const update = ref<UpdateState | null>(null)
+const newer = computed(() => !!update.value && ['available', 'downloading', 'ready'].includes(update.value.status))
 const version = ref<string | null>(null)
 const minimize = (): void => void api.invoke('panel:minimize')
 const maximize = (): void => void api.invoke('panel:maximize')
@@ -167,6 +171,21 @@ onBeforeUnmount(() => {
       <div class="flex h-full w-60 shrink-0 items-center gap-2 border-r border-card px-4">
         <img src="/icon.png" alt="" class="size-[18px]" draggable="false" />
         <span class="text-sm font-semibold">{{ DISPLAY_NAME }}</span>
+        <button
+          v-if="newer && update"
+          type="button"
+          class="no-drag min-w-0 truncate rounded-full border border-yellow/50 bg-yellow/15 px-2 py-0.5 text-[11px] font-medium text-yellow hover:bg-yellow/25"
+          :title="
+            update.status === 'ready'
+              ? t('Restart to update to {v}', { v: update.latest ?? '' })
+              : update.status === 'downloading'
+                ? t('Downloading {v}… {p}%', { v: update.latest ?? '', p: update.percent })
+                : t('Update {v} available', { v: update.latest ?? '' })
+          "
+          @click="go('updates')"
+        >
+          {{ update.status === 'ready' ? t('Restart to update') : update.status === 'downloading' ? `${update.percent}%` : t('New version') }}
+        </button>
       </div>
       <div class="flex min-w-0 flex-1 items-center gap-2 px-4">
         <span
@@ -180,20 +199,6 @@ onBeforeUnmount(() => {
           <span v-if="who" class="truncate text-dark">· {{ who }}</span>
         </span>
         <span v-if="store.sessionSouls" class="rounded-full border border-card bg-dark px-2.5 py-0.5 text-xs text-green">{{ t('+{n} souls this session', { n: store.sessionSouls }) }}</span>
-        <button
-          v-if="update && ['available', 'downloading', 'ready'].includes(update.status)"
-          type="button"
-          class="no-drag ml-auto rounded-full border border-accent/50 bg-accent/15 px-2.5 py-0.5 text-xs font-medium text-accent hover:bg-accent/25"
-          @click="go('updates')"
-        >
-          {{
-            update.status === 'ready'
-              ? t('Restart to update to {v}', { v: update.latest ?? '' })
-              : update.status === 'downloading'
-                ? t('Downloading {v}… {p}%', { v: update.latest ?? '', p: update.percent })
-                : t('Update {v} available', { v: update.latest ?? '' })
-          }}
-        </button>
       </div>
       <div class="no-drag flex h-full">
         <button type="button" class="flex w-12 items-center justify-center text-darker hover:bg-dark hover:text-default" :title="t('Minimize')" @click="minimize">
@@ -219,18 +224,25 @@ onBeforeUnmount(() => {
             type="button"
             :class="[
               'relative flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm transition-colors',
-              page === id ? 'bg-dark font-medium text-default' : 'text-dark hover:bg-dark hover:text-default',
+              id === 'updates' && newer
+                ? 'glow bg-yellow/10 font-medium text-yellow ring-1 ring-yellow/40 hover:bg-yellow/20'
+                : page === id
+                  ? 'bg-dark font-medium text-default'
+                  : 'text-dark hover:bg-dark hover:text-default',
             ]"
             @click="go(id)"
           >
-            <span v-if="page === id" class="absolute -left-2.5 top-1.5 h-5 w-[3px] rounded-r bg-accent" />
-            <svg viewBox="0 0 16 16" :class="['size-4 shrink-0', page === id ? 'text-accent' : 'text-darker']" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <span v-if="page === id" :class="['absolute -left-2.5 top-1.5 h-5 w-[3px] rounded-r', id === 'updates' && newer ? 'bg-yellow' : 'bg-accent']" />
+            <svg viewBox="0 0 16 16" :class="['size-4 shrink-0', id === 'updates' && newer ? 'text-yellow' : page === id ? 'text-accent' : 'text-darker']" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
               <path :d="PAGES[id].icon" />
             </svg>
             <span class="min-w-0 flex-1 truncate">{{ t(PAGES[id].label) }}</span>
             <span
               v-if="badge[id]"
-              :class="['shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums', page === id ? 'bg-accent/20 text-accent' : 'bg-dark text-darker']"
+              :class="[
+                'shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums',
+                id === 'updates' && newer ? 'bg-yellow/20 text-yellow' : page === id ? 'bg-accent/20 text-accent' : 'bg-dark text-darker',
+              ]"
             >{{ badge[id] }}</span>
           </button>
         </div>
@@ -299,5 +311,18 @@ onBeforeUnmount(() => {
 }
 .no-drag {
   -webkit-app-region: no-drag;
+}
+/* The Updates page with a new version out: a soft yellow glow, breathing. */
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgb(251 191 36 / 0.25);
+  }
+  50% {
+    box-shadow: 0 0 14px rgb(251 191 36 / 0.55);
+  }
+}
+.glow {
+  animation: glow 2.4s ease-in-out infinite;
 }
 </style>

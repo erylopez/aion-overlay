@@ -8,6 +8,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { IconLayer } from '@/lib/gatherables.ts'
 import { mapImage, project, type World } from '@/lib/spawns.ts'
 import { t } from '@/lib/i18n.ts'
+import SkullMark from '@/components/SkullMark.vue'
 
 export interface MapLayer {
   key: string | number
@@ -24,8 +25,10 @@ const props = defineProps<{
   cubes?: [number, number][]
   /** Gatherables: each place as its icon, the name on hover. */
   icons?: IconLayer[]
-  /** Enemy players in view: red pins, the name on hover. */
-  enemies?: { name: string; position: [number, number] }[]
+  /** Enemy players in view: red pins (grey when they cannot attack you), the name on hover. */
+  enemies?: { name: string; position: [number, number]; threat: boolean }[]
+  /** Where you last died, in this zone: a skull. */
+  death?: [number, number] | null
   /** Keep you in the middle at this zoom (times the whole zone's): the map overlay. */
   follow?: number
   /** The help line at the bottom (off in the small map overlay). */
@@ -40,7 +43,7 @@ const loaded = ref(false)
 
 const youXY = computed(() => (props.you ? project(props.world, props.you).map((v) => v * SIZE) : null))
 const enemyXY = computed(() =>
-  (props.enemies ?? []).map((e) => ({ name: e.name, xy: project(props.world, e.position).map((v) => v * SIZE) as [number, number] })),
+  (props.enemies ?? []).map((e) => ({ name: e.name, threat: e.threat, xy: project(props.world, e.position).map((v) => v * SIZE) as [number, number] })),
 )
 /** A map pin's outline, its point at (0, 0), `s` tall. */
 const pinPath = (s: number): string =>
@@ -57,6 +60,7 @@ const iconPx = computed(() => {
   const ratio = view.value.k / (Math.min(w, h) / SIZE)
   return Math.min(18, Math.max(6, 4.5 + ratio * 1.7))
 })
+const deathXY = computed(() => (props.death ? (project(props.world, props.death).map((v) => v * SIZE) as [number, number]) : null))
 const cubeXY = computed(() => (props.cubes ?? []).map((c) => project(props.world, c).map((v) => v * SIZE) as [number, number]))
 /** A golden cube's three faces, centred on 0,0, at `r` map units across. */
 function cubeFaces(r: number): { top: string; left: string; right: string } {
@@ -259,12 +263,14 @@ defineExpose({ fit, recentre })
           <polygon :points="cubeFaces(9 / view.k).left" fill="#f59e0b" stroke="#78350f" :stroke-width="1 / view.k" />
           <polygon :points="cubeFaces(9 / view.k).right" fill="#b45309" stroke="#78350f" :stroke-width="1 / view.k" />
         </g>
-        <!-- Enemy players: red pins pointing at where they stand. -->
+        <!-- Enemy players: pins pointing at where they stand, red when they can attack you, grey when not. -->
         <g v-for="(e, i) in enemyXY" :key="`enemy-${i}`" :transform="`translate(${e.xy[0]} ${e.xy[1]})`">
           <title>{{ e.name }}</title>
-          <path :d="pinPath(22 / view.k)" fill="#ef4444" stroke="#450a0a" :stroke-width="1.2 / view.k" />
+          <path :d="pinPath(22 / view.k)" :fill="e.threat ? '#ef4444' : '#9ca3af'" :stroke="e.threat ? '#450a0a' : '#1f2937'" :stroke-width="1.2 / view.k" />
           <circle :cy="-15.8 / view.k" :r="3.2 / view.k" fill="#fff" />
         </g>
+        <!-- Where you last died: a skull. -->
+        <SkullMark v-if="deathXY" :at="deathXY" :size="22 / view.k"><title>{{ t('Where you last died') }}</title></SkullMark>
         <!-- You: a ring with a dot, drawn last so nothing covers it. -->
         <g v-if="youXY">
           <circle :cx="youXY[0]" :cy="youXY[1]" :r="11 / view.k" fill="none" stroke="#ffffff" :stroke-width="3 / view.k" />

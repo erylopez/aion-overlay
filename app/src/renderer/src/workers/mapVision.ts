@@ -10,8 +10,10 @@
  * map's own movement is followed too (optical flow over the picture), which says where to search
  * next when it moved far (flying fast scrolls the game's map a long way) and carries the markers
  * over stretches where too few keypoints match (plain red ground): up to FLOW_ONLY pictures.
- * Lost, the zone around you (where the game's map opens) is searched, and the whole zone every
- * few seconds (that takes about a second).
+ * Lost, the zone around you (where the game's map opens) is searched, at the sizes it was found
+ * at before and seldom at every size, and the whole zone only for a map moved away from you (that
+ * takes about a second). A picture that did not change, or the game's 3D world moving behind no
+ * map, is searched little or not at all: most of the time the game's map is closed.
  *
  * The zone map the app ships (3072 px) is matched against first. The game's own tiles, finer,
  * replace it once they are here (main/gameMapDetail.ts downloads them once per zone): they are
@@ -29,11 +31,12 @@
  * a placement steady to a tenth of a pixel. The keypoints remain for when that does not match
  * (half the map covered) and for when where you are is not known.
  *
- * Messages in: { type: 'reference', key, url } to (re)load a zone's map; { type: 'detail', key,
+ * Messages in: { type: 'scales', known } the sizes kept from before; { type: 'reference', key, url } to (re)load a zone's map; { type: 'detail', key,
  * features | tiles, cols, rows } its full detail; { type: 'frame', width,
  * height, rgba, player } a picture, with where you are on the zone map (its pixels) when known.
  * Out: { type: 'reference', key, width, height, detail } once loaded (or with
- * an error, or the detail in its place), { type: 'features', key, data } what to keep of the detail, and { type: 'result', matrix | null, inliers, ms, mode } per picture.
+ * an error, or the detail in its place), { type: 'features', key, data } what to keep of the detail,
+ * { type: 'scales', key, scales } sizes to keep, and { type: 'result', matrix | null, inliers, ms, mode } per picture.
  */
 import cvModule from '@techstark/opencv-js'
 
@@ -72,6 +75,30 @@ const CELL = 128
 const GLOBAL_EVERY_MS = { near: 300, nearIdle: 3_000, zone: 4_000, zoneKnown: 15_000, zoneIdle: 30_000 }
 /** Lost this long: gone a while. */
 const IDLE_AFTER_MS = 3_000
+/**
+ * The sizes the map was found at, per zone and picture width, most recent first: the game's map
+ * zooms in steps and the minimap not at all, so these few are tried before every size is (thirty
+ * of them, most of the search's cost). With some known, every size is tried only this often (just
+ * lost, gone a while, and on a moving 3D world, where no map is to be seen).
+ */
+const KNOWN_SCALES = 6
+/**
+ * A size is kept only once the map found at it was followed this long, scoring this well on
+ * average: a false find (on the 3D world, the map closed) kept would be looked for again and again.
+ */
+const LEARN_AFTER_MS = 3_000
+const LEARN_SCORE = 0.55
+const SWEEP_EVERY_MS = { lost: 2_000, idle: 10_000, world: 10_000 }
+/**
+ * Lost, a picture this like the last one everything was tried on (the mean difference, 0 to 255,
+ * both shrunk to THUMB_PX across), with you where you were, is not searched again: a menu, a
+ * loading screen, the game standing still with its map closed. Searched again after a while anyway.
+ */
+const SAME_DIFF = 3
+const THUMB_PX = 32
+const SAME_RECHECK_MS = 30_000
+/** Where you are known, the whole zone is searched only after this many looks around you failed on what looks like a map (one moved away from you). */
+const ZONE_AFTER_MISSES = 3
 /** The picture's sizes against the shipped map's (picture pixels to one of its pixels) looked for around you. */
 const SCALES = { min: 0.35, max: 6, step: 1.1 }
 /** Across, in pixels, the picture is shrunk to: to look for it, to follow it, and to place it finely. */
@@ -124,6 +151,21 @@ let lastZone = 0
 let lastNear = 0
 /** When the map was last found (or the zone map came): lost long after it, the search slows. */
 let foundAt = 0
+/** Sizes the map was found at, by zone and picture width (see KNOWN_SCALES); kept by the page. */
+let known: Record<string, number[]> = {}
+let knownKey = ''
+/** The last picture everything was tried on with no luck, shrunk, where you were, and whether the zone was searched on it too. */
+let blank: { thumb: Cv; at: [number, number] | null; when: number; zoned: boolean } | null = null
+let lastSweep = 0
+/** Failed looks around you on what looked like a map, since the zone was last searched. */
+let misses = 0
+/**
+ * Found around you on the last picture, not yet shown: the next one must follow it as well as a
+ * find (a false find on the 3D world scores barely enough, once, and follows badly after).
+ */
+let tentative = false
+/** Since the map was last found (around you or in the zone): when, its scores, and whether its size was kept. */
+let run: { at: number; sum: number; n: number; kept: boolean } | null = null
 /** No mask: one empty Mat for every detection (a new one each time was never freed). */
 let noMask: Cv = null
 /** The previous picture, and points on it to follow into the next one. */
@@ -196,8 +238,11 @@ async function loadReference(key: string, url: string): Promise<void> {
   prevGray?.delete()
   prevPts?.delete()
   prevGray = prevPts = null
-  lastZone = 0
+  lastZone = -Infinity
   lastNear = 0
+  lastSweep = 0
+  misses = 0
+  clearBlank()
   foundAt = performance.now()
   flowRun = 0
 }
@@ -286,12 +331,13 @@ function nearMatrix(m: number[] | null, frameW: number, frameH: number, pad: num
 }
 
 /**
- * How the picture moved since the previous one (optical flow): [dx, dy] when most followed points
- * agree, as on the game's map scrolling under you; null when they do not (the map closed, the game's
- * 3D world behind it moving every which way).
+ * How the picture moved since the previous one (optical flow): `shift` [dx, dy] when most followed
+ * points agree, as on the game's map scrolling under you; `mixed` when they do not (the map closed,
+ * the game's 3D world behind it moving every which way).
  */
-function flowShift(gray: Cv): [number, number] | null {
-  if (!prevGray || !prevPts || prevPts.rows < 12) return null
+function flowShift(gray: Cv): { shift: [number, number] | null; mixed: boolean } {
+  const none = { shift: null, mixed: false }
+  if (!prevGray || !prevPts || prevPts.rows < 12 || prevGray.cols !== gray.cols || prevGray.rows !== gray.rows) return none
   const next = new cv.Mat()
   const status = new cv.Mat()
   const err = new cv.Mat()
@@ -306,12 +352,12 @@ function flowShift(gray: Cv): [number, number] | null {
   next.delete()
   status.delete()
   err.delete()
-  if (dx.length < 12) return null
+  if (dx.length < 12) return none
   const median = (v: number[]): number => [...v].sort((p, q) => p - q)[v.length >> 1]!
   const mx = median(dx)
   const my = median(dy)
   const agree = dx.filter((x, i) => Math.hypot(x - mx, dy[i]! - my) < 3).length
-  return agree >= dx.length * 0.6 ? [mx, my] : null
+  return agree >= dx.length * 0.6 ? { shift: [mx, my], mixed: false } : { shift: null, mixed: true }
 }
 
 /** Keep this picture and points on it, to follow them into the next one. */
@@ -449,15 +495,16 @@ function refine(gray: Cv, m: { matrix: number[]; score: number }): { matrix: num
 
 /**
  * Lost, and where you are known: the game's map opens on you, so the picture is compared with the
- * shipped map around you, at each size it could be (the last one first, alone, which is quick).
+ * shipped map around you, at the sizes given (the shipped map's pixels; ones within 1% of an
+ * earlier one are skipped).
  */
-function lookAround(gray: Cv, player: [number, number], full: boolean): Placed | null {
+function lookAround(gray: Cv, player: [number, number], sizes: number[]): Placed | null {
   const reach = Math.max(gray.cols, gray.rows) / 2
   let best: { matrix: number[]; score: number; scale: number } | null = null
-  const sizes: number[] = []
-  if (lastScale) sizes.push(lastScale / SCALES.step, lastScale, lastScale * SCALES.step)
-  if (full) for (let s = SCALES.min; s <= SCALES.max; s *= SCALES.step) sizes.push(s)
+  const tried: number[] = []
   for (const scale of sizes) {
+    if (tried.some((t) => Math.abs(scale / t - 1) < 0.01)) continue
+    tried.push(scale)
     const m = place(gray, scale, player, reach, LOOK_PX)
     if (m && (!best || m.score > best.score)) best = { ...m, scale }
   }
@@ -494,7 +541,7 @@ function follow(gray: Cv, moved: number[]): Placed | null {
   return { matrix: fromCoarse(done.matrix), inliers: 0, score: done.score }
 }
 
-type Mode = 'follow' | 'local' | 'flow' | 'near' | 'zone' | 'wait'
+type Mode = 'follow' | 'local' | 'flow' | 'near' | 'zone' | 'wait' | 'still' | 'away'
 
 /**
  * Each match lands a pixel or three off the last one even on a map that has not moved (the game's
@@ -523,6 +570,47 @@ function steady(moved: number[] | null, m: number[], shift: [number, number] | n
   return moved.map((v, i) => v * keep + m[i]! * (1 - keep))
 }
 
+/** The map found at `scale` (the shipped map's pixels): first among the known sizes, told to the page to keep. */
+function learn(scale: number): void {
+  if (!knownKey || scale < SCALES.min / SCALES.step || scale > SCALES.max * SCALES.step) return
+  const list = (known[knownKey] ?? []).filter((s) => Math.abs(scale / s - 1) >= 0.03)
+  const before = known[knownKey]
+  known[knownKey] = [scale, ...list].slice(0, KNOWN_SCALES)
+  // Not told again for the same size (each find of the map at its usual zoom).
+  if (before?.[0] && Math.abs(before[0] / scale - 1) < 0.03 && before.length === known[knownKey]!.length) return
+  self.postMessage({ type: 'scales', key: knownKey, scales: known[knownKey] })
+}
+
+function clearBlank(): void {
+  blank?.thumb.delete()
+  blank = null
+}
+
+/** The picture, shrunk to THUMB_PX across, to tell whether the screen changed. */
+function thumbOf(gray: Cv): Cv {
+  const k = THUMB_PX / Math.max(gray.cols, gray.rows)
+  const out = new cv.Mat()
+  cv.resize(gray, out, new cv.Size(Math.max(4, Math.round(gray.cols * k)), Math.max(4, Math.round(gray.rows * k))), 0, 0, cv.INTER_AREA)
+  return out
+}
+
+/** The picture is the last one everything was tried on, with you where you were. */
+function unchanged(thumb: Cv, at: [number, number] | null, now: number): boolean {
+  if (!blank || now - blank.when > SAME_RECHECK_MS || !at !== !blank.at) return false
+  if (at && blank.at && Math.hypot(at[0] - blank.at[0], at[1] - blank.at[1]) > 2) return false
+  if (thumb.cols !== blank.thumb.cols || thumb.rows !== blank.thumb.rows) return false
+  const diff = new cv.Mat()
+  cv.absdiff(thumb, blank.thumb, diff)
+  const mean = cv.mean(diff)[0] as number
+  diff.delete()
+  return mean < SAME_DIFF
+}
+
+function keepBlank(thumb: Cv, at: [number, number] | null, now: number, zoned: boolean): void {
+  clearBlank()
+  blank = { thumb: thumb.clone(), at, when: now, zoned }
+}
+
 function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffer>, player: [number, number] | null): { matrix: number[] | null; inliers: number; score?: number; mode: Mode } {
   const image = cv.matFromImageData(new ImageData(rgba, width, height))
   const gray = new cv.Mat()
@@ -547,22 +635,39 @@ function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffe
     kp.delete()
     return (kps = { pts, desc })
   }
+  knownKey = coarse ? `${coarse.key}|${width}` : ''
   // Where the map went since the last picture: the last match, moved as the picture moved.
-  const shift = last ? flowShift(gray) : null
+  const flow = flowShift(gray)
+  const shift = last ? flow.shift : null
+  let thumb: Cv = null
   const moved = last && shift ? [last[0]!, last[1]!, last[2]! + shift[0], last[3]!, last[4]!, last[5]! + shift[1]] : last
-  const found = (m: Placed, mode: Mode): { matrix: number[]; inliers: number; score?: number; mode: Mode } => {
+  const found = (m: Placed, mode: Mode): { matrix: number[] | null; inliers: number; score?: number; mode: Mode } => {
     last = steady(moved, m.matrix, shift, width, height)
     foundAt = performance.now()
     lastScale = toCoarse(last)[0]!
+    if (mode === 'near' || mode === 'zone') run = { at: foundAt, sum: 0, n: 0, kept: false }
+    else if (run && !run.kept && m.score !== undefined) {
+      run.sum += m.score
+      run.n++
+      if (foundAt - run.at >= LEARN_AFTER_MS && run.sum / run.n >= LEARN_SCORE) {
+        run.kept = true
+        learn(lastScale)
+      }
+    }
     flowRun = 0
-    return { matrix: last, inliers: m.inliers, score: m.score, mode }
+    misses = 0
+    clearBlank()
+    tentative = mode === 'near'
+    return { matrix: tentative ? null : last, inliers: m.inliers, score: m.score, mode }
   }
+  const unsure = tentative
+  tentative = false
   try {
     if (moved && coarseGray) {
       const m = follow(gray, moved)
-      if (m) return found(m, 'follow')
+      if (m && (!unsure || (m.score ?? 0) >= MIN_SCORE.look)) return found(m, 'follow')
     }
-    if (moved && keypoints().desc.rows >= MIN_INLIERS.local) {
+    if (moved && !unsure && keypoints().desc.rows >= MIN_INLIERS.local) {
       // Around where it should be now, then a wider look (a sharp pan, a zoom).
       for (const pad of [0.5, 1.5]) {
         const near = nearMatrix(moved, width, height, pad)
@@ -571,28 +676,57 @@ function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffe
       }
     }
     // Too little matched, but the picture moved as one: the map, scrolling. Carried a while.
-    if (moved && shift && flowRun < FLOW_ONLY) {
+    if (moved && shift && !unsure && flowRun < FLOW_ONLY) {
       flowRun++
       last = moved
       return { matrix: moved, inliers: 0, mode: 'flow' }
     }
+    run = null
     last = null
     flowRun = 0
     const now = performance.now()
-    // Lost: around you (the game's map opens on you), at the last size every picture, at every size now and then.
-    if (player && coarseGray && coarse && ref) {
-      const k = coarse.width / ref.width
-      const full = now - lastNear >= (now - foundAt > IDLE_AFTER_MS ? GLOBAL_EVERY_MS.nearIdle : GLOBAL_EVERY_MS.near)
-      if (full) lastNear = now
-      if (full || lastScale) {
-        const m = lookAround(gray, [player[0] * k, player[1] * k], full)
+    const idle = now - foundAt > IDLE_AFTER_MS
+    const at: [number, number] | null = player && coarse && ref ? [(player[0] * coarse.width) / ref.width, (player[1] * coarse.width) / ref.width] : null
+    // The picture everything was tried on, unchanged: nothing new to find on it.
+    thumb = thumbOf(gray)
+    // (Scrolling as one is a change however slight: the map, moved a little.)
+    const scrolled = !!flow.shift && Math.hypot(flow.shift[0], flow.shift[1]) >= 1
+    const same = !scrolled && unchanged(thumb, at, now)
+    // Moving, but not as one: the game's 3D world, no map over it.
+    const world = flow.mixed
+    // Lost: around you (the game's map opens on you), at the last size every picture, at the sizes
+    // it was found at before now and then, and at every size seldom.
+    if (at && coarseGray && !same) {
+      const knownSizes = known[knownKey] ?? []
+      const sizes: number[] = []
+      if (lastScale) sizes.push(lastScale / SCALES.step, lastScale, lastScale * SCALES.step)
+      const near = now - lastNear >= (idle ? GLOBAL_EVERY_MS.nearIdle : GLOBAL_EVERY_MS.near)
+      const sweepEvery = world ? SWEEP_EVERY_MS.world : knownSizes.length ? (idle ? SWEEP_EVERY_MS.idle : SWEEP_EVERY_MS.lost) : 0
+      const sweep = near && now - lastSweep >= sweepEvery
+      if (near) {
+        lastNear = now
+        for (const s of knownSizes) sizes.push(s, s / SCALES.step, s * SCALES.step)
+      }
+      if (sweep) {
+        lastSweep = now
+        for (let s = SCALES.min; s <= SCALES.max; s *= SCALES.step) sizes.push(s)
+      }
+      if (sizes.length) {
+        const m = lookAround(gray, at, sizes)
         if (m) return found({ ...m, matrix: fromCoarse(m.matrix) }, 'near')
+        if (near) misses++
+        if (sweep) keepBlank(thumb, at, now, false)
       }
     }
-    // The whole zone by its keypoints: seldom while where you are is known.
-    const zoneEvery = now - foundAt > IDLE_AFTER_MS && player ? GLOBAL_EVERY_MS.zoneIdle : player ? GLOBAL_EVERY_MS.zoneKnown : GLOBAL_EVERY_MS.zone
-    if (now - lastZone >= zoneEvery && keypoints().desc.rows >= MIN_INLIERS.local) {
+    // The whole zone by its keypoints (half a second or more). Where you are known, only for a map
+    // moved away from you: not found around you a few times, and once per still picture. (A moving
+    // 3D world only makes it seldom: the game's see-through map shows the world moving behind it,
+    // and its frame and your arrow stay still over a map scrolling under them.)
+    const zoneEvery = idle || world ? GLOBAL_EVERY_MS.zoneIdle : at ? GLOBAL_EVERY_MS.zoneKnown : GLOBAL_EVERY_MS.zone
+    const zoneWanted = same ? !blank!.zoned : at ? misses >= ZONE_AFTER_MISSES : true
+    if (zoneWanted && now - lastZone >= zoneEvery && keypoints().desc.rows >= MIN_INLIERS.local) {
       lastZone = now
+      misses = 0
       // On the shipped map (a third of the keypoints of the detail), then in the detail's pixels.
       const on = coarse ?? ref
       const m = solve(keypoints().desc, keypoints().pts, null, on)
@@ -601,11 +735,14 @@ function match(width: number, height: number, rgba: Uint8ClampedArray<ArrayBuffe
         const [a, b, c, d, e, f] = m.matrix as [number, number, number, number, number, number]
         return found({ matrix: [a * k, b * k, c, d * k, e * k, f], inliers: m.inliers }, 'zone')
       }
+      if (same) blank!.zoned = true
+      else keepBlank(thumb, at, now, true)
     }
-    return { matrix: null, inliers: 0, mode: 'wait' }
+    return { matrix: null, inliers: 0, mode: same ? 'still' : world ? 'away' : 'wait' }
   } finally {
     // Set inside keypoints(), which TypeScript does not follow here.
     ;(kps as { desc: Cv } | null)?.desc.delete()
+    ;(thumb as Cv)?.delete()
     keepForFlow(gray)
   }
 }
@@ -614,9 +751,14 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
   cv ??= await ready
   noMask ??= new cv.Mat()
   const msg = e.data as
+    | { type: 'scales'; known: Record<string, number[]> }
     | { type: 'reference'; key: string; url: string }
     | { type: 'detail'; key: string; features?: ArrayBuffer; cols?: number; rows?: number; tiles?: ArrayBuffer[] }
     | { type: 'frame'; width: number; height: number; rgba: Uint8ClampedArray<ArrayBuffer>; player: [number, number] | null }
+  if (msg.type === 'scales') {
+    known = { ...msg.known, ...known }
+    return
+  }
   if (msg.type === 'detail') {
     if (coarse?.key !== msg.key) return
     try {

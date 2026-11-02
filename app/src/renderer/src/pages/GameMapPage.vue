@@ -12,6 +12,8 @@ import { useApp } from '@/stores/app.ts'
 import MapVision from '@/workers/mapVision.ts?worker'
 import type { GameMapState } from '@shared/gameMap.ts'
 import type { InvokeResult } from '@shared/ipc.ts'
+import { canAttack, lastDeath } from '@shared/tracker.ts'
+import { drawSkull } from '@/lib/skull.ts'
 
 /** Pictures are taken at most this often, and one at a time. */
 const FRAME_MS = 120
@@ -49,6 +51,13 @@ const world = computed(() => (spawns.value && worldId.value !== null ? (spawns.v
 // ---- vision ---------------------------------------------------------------------------------
 
 const worker = new MapVision()
+/** The sizes the map was found at, per zone (the worker's KNOWN_SCALES), kept between runs. */
+const SCALES_KEY = 'gameMap.scales'
+try {
+  worker.postMessage({ type: 'scales', known: JSON.parse(localStorage.getItem(SCALES_KEY) ?? '{}') })
+} catch {
+  // None kept: they are learned again.
+}
 /** The zone map the worker has: its key and size, and whether it is the game's full detail. */
 const reference = ref<{ key: string; width: number; height: number; detail: boolean } | null>(null)
 /** The full detail of the zone, while it is being had (downloaded once, then kept). */
@@ -86,6 +95,18 @@ worker.onmessage = (e: MessageEvent): void => {
     return
   }
   if (msg.type === 'features') return void api.invoke('gamemap:saveFeatures', msg.key, msg.data)
+  if (msg.type === 'scales') {
+    try {
+      const all = JSON.parse(localStorage.getItem(SCALES_KEY) ?? '{}') as Record<string, number[]>
+      delete all[msg.key]
+      // The latest last, the oldest zones dropped past a few hundred.
+      const keys = Object.keys(all).slice(-299)
+      localStorage.setItem(SCALES_KEY, JSON.stringify(Object.fromEntries([...keys.map((k) => [k, all[k]]), [msg.key, msg.scales]])))
+    } catch {
+      // Not kept: learned again next time.
+    }
+    return
+  }
   if (msg.type === 'detailError') {
     note(`zone map ${msg.key} detail not made: ${msg.error}`)
     detail.value = 'shipped'
@@ -442,8 +463,15 @@ function draw(): void {
       ctx.stroke()
     }
   }
-  // Enemies: red pins with their names.
+  // Where you last died, in this zone: a skull.
+  const death = lastDeath(store.pvp)
+  if (death && death.place.world === worldId.value) {
+    const [x, y] = at(death.place.position)
+    if (inside([x, y], 20)) drawSkull(ctx, x, y, 22)
+  }
+  // Enemies: pins with their names, red when they can attack you, grey when not (PvP off, outside the Abyss).
   if (cfg.value.enemies) {
+    const abyss = world.value?.group === 'abyss'
     ctx.font = '600 11px Inter Variable, Segoe UI, sans-serif'
     ctx.textAlign = 'center'
     for (const enemy of store.enemies) {
@@ -454,20 +482,21 @@ function draw(): void {
       ctx.arc(x, y - 14, 6, Math.PI * 0.85, Math.PI * 2.15)
       ctx.lineTo(x, y)
       ctx.closePath()
-      ctx.fillStyle = '#ef4444'
-      ctx.strokeStyle = '#450a0a'
+      const threat = canAttack(enemy, abyss)
+      ctx.fillStyle = threat ? '#ef4444' : '#9ca3af'
+      ctx.strokeStyle = threat ? '#450a0a' : '#1f2937'
       ctx.lineWidth = 1.5
       ctx.fill()
       ctx.stroke()
       ctx.lineWidth = 3
       ctx.strokeStyle = 'rgba(0,0,0,0.85)'
       ctx.strokeText(enemy.name, x, y - 24)
-      ctx.fillStyle = '#fecaca'
+      ctx.fillStyle = threat ? '#fecaca' : '#e5e7eb'
       ctx.fillText(enemy.name, x, y - 24)
     }
   }
 }
-watch([placed, found, gatherables, pets, () => store.cubes, () => store.enemies, cfg, capture], draw, { deep: true })
+watch([placed, found, gatherables, pets, () => store.cubes, () => store.enemies, () => store.pvp.length, cfg, capture], draw, { deep: true })
 
 // ---- the loop, and what the Map page shows ------------------------------------------------------
 

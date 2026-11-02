@@ -163,7 +163,7 @@ const BACKGROUND_HINT = 'At None the text keeps a dark glow, readable on the gam
           <Toggle :model-value="store.settings.enemies.enabled" @update:model-value="setEnemies({ enabled: $event })" />
         </SettingRow>
         <template v-if="store.settings.enemies.enabled">
-          <SettingRow label="Enemies on the map" hint="A red pin on the map overlay where each enemy was last seen: as they come into view, then as effects and skills land on them.">
+          <SettingRow label="Enemies on the map" hint="A pin on the map overlay where each enemy was last seen: as they come into view, then as effects and skills land on them. Red when they can attack you (PvP on, or anyone in the Abyss), grey with their PvP off.">
             <Toggle :model-value="store.settings.enemies.mapPins" @update:model-value="setEnemies({ mapPins: $event })" />
           </SettingRow>
           <SettingRow label="Enemies background" :hint="BACKGROUND_HINT">

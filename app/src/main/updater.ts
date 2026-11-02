@@ -56,6 +56,9 @@ let state: UpdateState = {
 
 /** The Updates page looks the newest release up when opened, this often at most. */
 const PEEK_EVERY_MS = 10 * 60_000
+/** Looked up by itself too (the bubble's "!" badge): a while after the app starts, then every half hour. */
+const LOOK_AFTER_MS = 30_000
+const LOOK_EVERY_MS = 30 * 60_000
 /** Check for updates was clicked: a newer version is downloaded and installed without asking again. */
 let andInstall = false
 /** The portable copy's update, unpacked and ready: the folder holding the new exe, and its name. */
@@ -162,6 +165,9 @@ export function startUpdater(): void {
     andInstall = false
     set({ status: 'error', error: err?.message ?? String(err), checkedAt: Date.now() })
   })
+  if (state.status === 'dev') return
+  setTimeout(() => updater.peek(), LOOK_AFTER_MS)
+  setInterval(() => updater.peek(), LOOK_EVERY_MS)
 }
 
 export const updater = {

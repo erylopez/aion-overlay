@@ -41,6 +41,8 @@ const MODE: Record<string, string> = {
   near: 'Found around you',
   zone: 'Found in the zone',
   wait: 'Looking for it',
+  still: 'Waiting for the screen to change',
+  away: 'No map on screen',
   error: 'Error',
 }
 const CAPTURE: Record<NonNullable<GameMapState['capture']>, string> = {
@@ -72,7 +74,7 @@ onMounted(async () => {
 onBeforeUnmount(() => off?.())
 
 const STEPS = [
-  { title: "Open the game's map overlay", body: 'In game, press Shift+Alt+M: the see-through map over the game, the one with Map Opacity and Path Opacity at its top.', key: 'Shift+Alt+M' },
+  { title: "Open the game's map", body: 'It works with the regular minimap or with the see-through map overlay of Shift+Alt+M (the one with Map Opacity and Path Opacity at its top).', key: 'Shift+Alt+M' },
   { title: 'Pick where it is', body: 'Press the button below and drag a box around that map on the screen. Only once: it is kept.', key: null },
   { title: 'Play', body: 'The markers are drawn on it and follow it as you zoom, move it or fly. With the map closed, nothing is drawn.', key: null },
 ]
@@ -96,6 +98,12 @@ const STEPS = [
         {{ t(DETAIL[state.detail]) }}
       </span>
     </PageHeader>
+
+    <!-- What it costs: it reads the screen all the time. -->
+    <div class="mb-4 flex items-start gap-3 rounded-xl border border-yellow/40 bg-yellow/10 px-4 py-3 text-sm text-yellow">
+      <svg viewBox="0 0 16 16" class="mt-0.5 size-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8 15 14H1zM8 6.5v3.2M8 11.8v.1" /></svg>
+      <p>{{ t('Markers here sit more exactly where they are around you, but it uses more of your computer: it keeps looking at the screen and matching the map\'s pictures. If the game feels slow, turn it off.') }}</p>
+    </div>
 
     <!-- How to set it up. -->
     <ol class="mb-6 grid gap-3 md:grid-cols-3">

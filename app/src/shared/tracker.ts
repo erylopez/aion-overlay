@@ -63,6 +63,9 @@ export interface Nearby {
 
 export const NO_NEARBY: Nearby = { world: null, position: null, positionAt: null, monsters: [] }
 
+/** Can attack you: PvP on, or anyone in the Abyss (where they stand, or the zone you are in), where everyone fights. */
+export const canAttack = (e: Enemy, abyss = false): boolean => abyss || !!e.pvp || !!e.openPvp
+
 /** A pet the collection has no record of yet (seen nearby, or opened from the map). */
 export const blankPet = (id: number): Pet => ({ id, name: null, souls: 0, level: 0, levelEstimated: true, crystals: 0, session: 0 })
 
@@ -135,6 +138,17 @@ export interface PvpKill {
    * id, to open in Details. Null when no hits between you were seen.
    */
   fight?: string | null
+  /** Your death: where you were (your zone, and your last known place in it), when known. */
+  place?: { world: number; position: [number, number] } | null
+}
+
+/** Your last death whose place is known (the kill feed's skull, and the maps'). */
+export function lastDeath(kills: PvpKill[]): (PvpKill & { place: NonNullable<PvpKill['place']> }) | null {
+  for (let i = kills.length - 1; i >= 0; i--) {
+    const k = kills[i]!
+    if (k.died) return k.place ? (k as PvpKill & { place: NonNullable<PvpKill['place']> }) : null
+  }
+  return null
 }
 
 /** A soul as the HUD toasts it. */

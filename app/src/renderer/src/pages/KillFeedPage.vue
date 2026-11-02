@@ -4,17 +4,20 @@
 // The kill feed over the game: a small window opened from the PvP page. Its title bar holds
 // this session's kills and deaths (all it shows between kills), moves the window and closes it;
 // each player kill around you slides in under it and falls off after a few seconds, as the HUD's
-// soul lines do.
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue'
+// soul lines do. Its skull opens a small map of where you last died.
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, toRaw, watch } from 'vue'
 import ClassIcon from '@/components/ClassIcon.vue'
 import CollapseButton from '@/components/CollapseButton.vue'
+import SkullMark from '@/components/SkullMark.vue'
+import WorldMap from '@/components/WorldMap.vue'
 import { bridge } from '@/lib/bridge.ts'
 import { t } from '@/lib/i18n.ts'
 import { panelStyle } from '@/lib/overlayLook.ts'
+import { loadSpawns, type SpawnData } from '@/lib/spawns.ts'
 import { windowDrag } from '@/lib/windowDrag.ts'
 import { useApp } from '@/stores/app.ts'
 import { serverTag } from '@shared/servers.ts'
-import type { PvpKill } from '@shared/tracker.ts'
+import { lastDeath, type PvpKill } from '@shared/tracker.ts'
 
 const SHOW_MS = 8000
 const MAX_LINES = 5
@@ -74,6 +77,20 @@ const cp = (v: number): string => (v >= 1000 ? `${(v / 1000).toFixed(1)}K` : Str
 const enemySound = computed(() => store.settings.enemies.sound)
 const toggleSound = (): void => void store.set('enemies', { ...store.settings.enemies, sound: !enemySound.value })
 
+/** Where you last died: the skull opens a small map of it (the zones' data loaded only then). */
+const death = computed(() => lastDeath(store.pvp))
+const showDeath = ref(false)
+const spawns = shallowRef<SpawnData | null>(null)
+const deathWorld = computed(() => (death.value && spawns.value ? (spawns.value.worlds[death.value.place.world] ?? null) : null))
+function toggleDeath(): void {
+  showDeath.value = !showDeath.value
+  if (showDeath.value && !spawns.value) void loadSpawns().then((d) => (spawns.value = d))
+}
+const ago = (at: number): string => {
+  const m = Math.max(0, Math.round((clock.value - at) / 60_000))
+  return m < 1 ? t('just now') : m < 60 ? t('{n} min ago', { n: m }) : t('{n} h ago', { n: Math.round(m / 60) })
+}
+
 /** Minimized: the title bar only (the kills and deaths), no kill lines. */
 const toggleCollapsed = (): void => void store.set('killFeed', { ...cfg.value, collapsed: !cfg.value.collapsed })
 
@@ -87,7 +104,7 @@ function report(): void {
   sent = key
   void bridge().invoke('killfeed:resize', { width: r.width, height: r.height })
 }
-watch([lines, counts, target, () => cfg.value.collapsed], () => void nextTick(report), { deep: true })
+watch([lines, counts, target, () => cfg.value.collapsed, showDeath, deathWorld], () => void nextTick(report), { deep: true })
 let observer: ResizeObserver | null = null
 onMounted(() => {
   observer = new ResizeObserver(report)
@@ -109,8 +126,19 @@ onBeforeUnmount(() => observer?.disconnect())
           <span class="text-xs tabular-nums"><span class="font-semibold text-green">{{ counts.kills }}</span> kills</span>
           <span class="text-xs tabular-nums"><span class="font-semibold text-danger">{{ counts.deaths }}</span> {{ t('deaths') }}</span>
           <button
+            v-if="death"
             type="button"
-            :class="['ml-auto flex size-5 shrink-0 items-center justify-center rounded hover:bg-dark hover:text-default', enemySound ? 'text-dark' : 'text-danger']"
+            :class="['ml-auto flex size-5 shrink-0 items-center justify-center rounded hover:bg-dark', showDeath && 'bg-dark']"
+            :title="showDeath ? t('Hide where you last died') : t('Where you last died')"
+            @pointerdown.stop
+            @dblclick.stop
+            @click="toggleDeath"
+          >
+            <SkullMark :size="16" />
+          </button>
+          <button
+            type="button"
+            :class="['flex size-5 shrink-0 items-center justify-center rounded hover:bg-dark hover:text-default', !death && 'ml-auto', enemySound ? 'text-dark' : 'text-danger']"
             :title="enemySound ? t('Enemy sound on: click to mute it') : t('Enemy sound muted: click to turn it on')"
             @pointerdown.stop
             @dblclick.stop
@@ -135,6 +163,24 @@ onBeforeUnmount(() => observer?.disconnect())
             </svg>
           </button>
         </header>
+        <div v-if="showDeath && death" :class="['px-2.5 py-1.5', cfg.opacity > 0 && 'border-t border-card']" @pointerdown.stop>
+          <div class="mb-1 flex min-w-0 items-baseline gap-1.5 text-xs">
+            <span class="truncate font-semibold text-default">{{ deathWorld?.name ?? t('Loading map…') }}</span>
+            <span class="shrink-0 text-darker">{{ ago(death.at) }}</span>
+            <span class="ml-auto min-w-0 truncate text-darker">{{ t('by {name}', { name: death.killer.name }) }}</span>
+          </div>
+          <div class="h-[220px] overflow-hidden rounded border border-card">
+            <WorldMap
+              v-if="deathWorld"
+              :world="deathWorld"
+              :layers="[]"
+              :focus="[death.place.position]"
+              :death="death.place.position"
+              :you="store.nearby.world === death.place.world ? store.nearby.position : null"
+              :hint="false"
+            />
+          </div>
+        </div>
         <div
           v-if="target && !cfg.collapsed"
           :class="['flex min-w-0 items-center gap-1.5 px-2.5 py-1.5', cfg.opacity > 0 && 'border-t border-card']"

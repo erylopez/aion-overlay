@@ -23,7 +23,7 @@ import { currentWorld, nearbyPets, useSpawns } from '@/lib/spawns.ts'
 import { windowDrag } from '@/lib/windowDrag.ts'
 import { useApp } from '@/stores/app.ts'
 import { MINIMAP_HEIGHT, MINIMAP_WIDTH, SETTINGS_DEFAULTS, type Settings } from '@shared/settings.ts'
-import { blankPet } from '@shared/tracker.ts'
+import { blankPet, canAttack, lastDeath } from '@shared/tracker.ts'
 
 /** The map overlay follows you rather than fitting anything. */
 const NO_FOCUS: [number, number][] = []
@@ -70,10 +70,17 @@ const cubes = computed(() => store.cubes.map((c) => c.position))
 /** Gatherables around you (Map page → Gatherables): the pinned ones, or all. */
 const gather = useGatherables()
 const icons = computed(() => (cfg.value.gatherables ? gatherLayers(gather.value, worldId.value, store.settings.gatherables.pinned) : []))
-/** Enemy players in view whose place is known: red pins (PvP page, Enemies nearby). */
+/** Enemy players in view whose place is known: red pins, grey with their PvP off outside the Abyss (PvP page, Enemies nearby). */
 const enemyPins = computed(() =>
-  store.settings.enemies.mapPins ? store.enemies.flatMap((e) => (e.position ? [{ name: e.name, position: e.position }] : [])) : [],
+  store.settings.enemies.mapPins
+    ? store.enemies.flatMap((e) => (e.position ? [{ name: e.name, position: e.position, threat: canAttack(e, world.value?.group === 'abyss') }] : []))
+    : [],
 )
+/** Where you last died, when it was in this zone. */
+const death = computed(() => {
+  const d = lastDeath(store.pvp)
+  return d && d.place.world === worldId.value ? d.place.position : null
+})
 const pet = (id: number) => store.pets.find((p) => p.id === id) ?? blankPet(id)
 
 const drag = windowDrag({ move: 'minimap:moveTo', end: 'minimap:dragEnd' })
@@ -204,6 +211,7 @@ onBeforeUnmount(() => observer?.disconnect())
             :cubes="cubes"
             :icons="icons"
             :enemies="enemyPins"
+            :death="death"
             :follow="cfg.zoom"
             :hint="false"
             class="!rounded-none"

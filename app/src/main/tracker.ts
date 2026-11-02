@@ -369,6 +369,7 @@ function handleLine(line: string): void {
         legion: ev['legion'] === true,
         fight: (ev['fight'] as string | null | undefined) ?? null,
       }
+      if (kill.died && nearby.world !== null && nearby.position) kill.place = { world: nearby.world, position: nearby.position }
       pvpLog.add(kill)
       log(`pvp: ${kill.killer.name} (${kill.killer.server}) killed ${kill.victim ? `${kill.victim.name} (${kill.victim.server ?? '?'})` : 'a player out of view'}${kill.mine ? ' [you]' : kill.died ? ' [you died]' : ''}`)
       break

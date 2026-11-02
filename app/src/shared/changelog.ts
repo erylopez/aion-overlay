@@ -13,6 +13,9 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: '0.3.9',
     items: [
+      'Where you last died in PvP is marked with a skull on the maps (Map page, map overlay, Map V2), and the kill feed\'s skull opens a small map of it.',
+      'The floating icon shows a yellow "!" when a newer version is out (looked up by itself now and then), in place of the session\'s soul count.',
+      'Enemies on the map are red when they can attack you (PvP on, or anyone in the Abyss) and grey with their PvP off.',
       'The kill feed has a speaker button to mute or unmute the enemy sound.',"Enemies nearby reads players' PvP right: some with it off were marked PvP (and set off the sound), and a player switching it on in view is marked straight away.",
       'The DPS meter has a button to show or hide the My skills overlay.',
       "The Characters page shows each character's Abyss corridors (Reshanta's Root, Sulfur Tree Island, Archipelago of Siel's Wings): which are still to do since the last reset, on Mondays, Thursdays and Saturdays at 21:00.",
