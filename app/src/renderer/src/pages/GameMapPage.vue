@@ -181,8 +181,9 @@ function onFrame(): void {
 video.requestVideoFrameCallback(onFrame)
 /** The stream gives no pictures: they are taken the slow way (main/gameMap.ts grab) meanwhile. */
 let slow = false
-/** Stream failures in a row: after two, the slow way. */
+/** Stream failures in a row: the first tried again at once (FIRST_RETRY_MS), and after three, the slow way. */
 let failures = 0
+const FIRST_RETRY_MS = 1_500
 /** A capture is being started: no new one until it is done. */
 let starting = false
 
@@ -233,8 +234,16 @@ async function retryCapture(): Promise<void> {
     for (const track of stream?.getTracks() ?? []) track.stop()
     stream = null
     video.srcObject = null
+    // The first failure is tried again at once, still "starting": a window opened as the last one
+    // closed (the region picked again) asks for the screen while the last one's capture of it is
+    // still letting go, and Windows plays the new one only a moment later.
+    if (++failures === 1) {
+      note(`capture: ${String(err)}; trying again`)
+      setTimeout(() => void retryCapture(), FIRST_RETRY_MS)
+      return
+    }
     fail(`no screen capture: ${String(err)}`)
-    if (++failures >= 2 && !slow) {
+    if (failures >= 3 && !slow) {
       slow = true
       note('capture: the stream gives no pictures, taking them the slow way meanwhile')
     }

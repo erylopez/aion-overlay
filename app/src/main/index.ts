@@ -6,7 +6,7 @@ import { app, session } from 'electron'
 import { DISPLAY_NAME } from '../shared/app.ts'
 import { broadcast } from './broadcast.ts'
 import { startCharacters } from './characters.ts'
-import { applyGameMap, startGameMap } from './gameMap.ts'
+import { applyGameMap, onGameMapStatus, startGameMap } from './gameMap.ts'
 import { startFieldBosses } from './fieldBosses.ts'
 import { startHealthWatch } from './health.ts'
 import { registerIpc } from './ipc.ts'
@@ -24,10 +24,12 @@ import { startTimers } from './timers.ts'
 import { killTrackerNow, log, startNpcapWatch, stopTracker, tracker } from './tracker.ts'
 import { tr } from './i18n.ts'
 import { createTray, setTrayTooltip } from './tray.ts'
-import { applyWindowSettings, markQuitting, refreshHud, setForeground, showMerchant, showPanel, startOnTopWatch } from './windows.ts'
+import { applyWindowSettings, closeMerchant, markQuitting, refreshHud, setForeground, showMerchant, showPanel, startOnTopWatch } from './windows.ts'
 
 // The name is also the data folder's (%APPDATA%\<name>): the old one is moved across once.
 app.setName(DISPLAY_NAME)
+/** A moment after a merchant tab opens before anything is taken as you having left the shop (a position the same tab's traffic brings). */
+const SHOP_SETTLE_MS = 1_500
 const migrated = OLD_NAMES.map((name) => moveDataFolder(join(app.getPath('appData'), name), app.getPath('userData')))
   .filter((m) => m !== 'nothing to move')
   .join('; ')
@@ -68,7 +70,22 @@ if (!app.requestSingleInstanceLock()) {
     // An alt-tab away from the game hides the overlays; back to it shows them.
     tracker.onEvent('focus', (ev) => setForeground(ev['game'] === true, ev['app'] === true))
     // A tab of the Black Cloud Merchant was opened: its pets worth buying, in their own window.
-    tracker.onShop(() => showMerchant())
+    // The game says nothing when its window is closed, so it closes when you are plainly out of it:
+    // you moved or killed something, or Map V2 found the game's map again (the shop covers it).
+    let shopAt: { at: number; position: string } | null = null
+    tracker.onShop(() => {
+      showMerchant()
+      shopAt = { at: Date.now(), position: String(tracker.nearby().position) }
+    })
+    const leftShop = (why: string): void => {
+      if (!shopAt || Date.now() - shopAt.at < SHOP_SETTLE_MS) return
+      shopAt = null
+      log(`merchant window closed: ${why}`)
+      closeMerchant()
+    }
+    tracker.onEvent('nearby', () => shopAt && String(tracker.nearby().position) !== shopAt.position && leftShop('you moved'))
+    tracker.onEvent('combat', () => leftShop('you are fighting'))
+    onGameMapStatus((status, was) => status === 'found' && was !== 'found' && leftShop("the game's map is back"))
     tracker.onStatus((status) => {
       refreshHud()
       const what = {

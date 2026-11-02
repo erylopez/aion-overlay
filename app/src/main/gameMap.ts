@@ -86,9 +86,18 @@ function closeOverlay(): void {
   setState({ status: 'off', world: null, inliers: 0, ms: 0 })
 }
 
+const statusListeners = new Set<(status: GameMapState['status'], was: GameMapState['status']) => void>()
+/** Map V2's status changing (found, lost): the merchant window closes when the game's map comes back. */
+export function onGameMapStatus(fn: (status: GameMapState['status'], was: GameMapState['status']) => void): () => void {
+  statusListeners.add(fn)
+  return () => statusListeners.delete(fn)
+}
+
 function setState(next: GameMapState): void {
+  const was = state.status
   state = next
   broadcast('gamemap:state', state)
+  if (next.status !== was) for (const fn of statusListeners) fn(next.status, was)
 }
 
 export const gameMap = {
