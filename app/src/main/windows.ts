@@ -466,6 +466,11 @@ function refreshMerchant(): void {
   }
 }
 
+/** Where the merchant window is while it shows, else null. */
+export function merchantBounds(): Rectangle | null {
+  return alive(merchant) && merchant.isVisible() ? merchant.getBounds() : null
+}
+
 export function resizeMerchant(size: { width: number; height: number }): void {
   merchantSize = { width: Math.ceil(size.width), height: Math.ceil(size.height) }
   refreshMerchant()

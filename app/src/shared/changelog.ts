@@ -14,7 +14,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: '0.3.10',
     items: [
       'The kill feed no longer wraps its title bar onto two lines, and it can be resized from its corner (a double-click there resets it).',
-      'The Black Cloud Merchant\'s pets window goes away when you press Escape in the game, and comes back when you open a tab of the shop again.',
+      'The Black Cloud Merchant\'s pets window goes away once the shop is gone from the screen, and comes back when you open a tab of the shop again.',
     ],
   },
   {

@@ -25,10 +25,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(windows)'.dependencies]
 # Npcap's folder on the DLL search path (capture::pcap_lib::prepare); which
-# window is in front and Escape (focus.rs).
+# window is in front (focus.rs).
 windows = { version = "0.59", features = [
     "Win32_Foundation",
-    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_LibraryLoader",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",

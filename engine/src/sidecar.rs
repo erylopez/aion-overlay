@@ -37,7 +37,6 @@
 //!   {"type": "pvpFight", "id", "fight": Fight|null}   answer to "pvpFight" (tracker/pvp.rs)
 //!   {"type": "focus", "game": true, "app": false}     what is in front, when it changes (Windows):
 //!                                                     the game, the app's own window (--app-pid), or neither
-//!   {"type": "key", "key": "escape"}                  Escape pressed while the game is in front (Windows; the game gets it too)
 //!   {"type": "details", "target": 123, ...TargetDetailsResponse, "fightBuffs": {"startTimeMs", "durationMs", "buffs"} | null}
 //!   {"type": "recording", "on": true, "path": "...", "segments"?: 1234}
 //!                                                     a recording started or stopped (it stops with the capture)
