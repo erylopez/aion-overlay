@@ -130,9 +130,14 @@ const badge = computed<Partial<Record<PageId, string>>>(() => {
   }
 })
 
-// Escape backs out of a pet's map.
+// Escape backs out of a pet's map, else puts the dashboard away (back to the game). In a text box
+// it leaves the box first.
 const onKey = (e: KeyboardEvent): void => {
-  if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement) && store.openPetId !== null) store.openPet(null)
+  if (e.key !== 'Escape' || e.defaultPrevented) return
+  const t = e.target
+  if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return t.blur()
+  if (store.openPetId !== null) return store.openPet(null)
+  hide()
 }
 const offs: (() => void)[] = []
 onMounted(() => {
