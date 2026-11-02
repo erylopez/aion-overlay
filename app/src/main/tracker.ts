@@ -46,7 +46,7 @@ let cubes: Cube[] = []
 let enemies: Enemy[] = []
 /** The player you last targeted. */
 let target: TargetPlayer | null = null
-/** The Black Cloud Merchant's stock: the latest of each tab opened, kept until its restock. */
+/** The Black Cloud Merchant's stock: the latest of each tab opened, kept until its restock or another character. */
 const shopTabs = new Map<number, ShopStock>()
 const currentShop = (): ShopStock[] => {
   const now = Date.now()
@@ -261,6 +261,13 @@ function handleLine(line: string): void {
       const name = ev['name'] as string
       log(`character: ${name}${ev['server'] ? ` (server ${ev['server']})` : ''}${ev['switched'] ? ', switched collection' : ''}`)
       replacePets(ev['pets'] as Pet[])
+      // Each character has its own Black Cloud Merchant stock: the last one's is not this one's.
+      if (name !== status.character && shopTabs.size) {
+        shopTabs.clear()
+        log('merchant: stock cleared (another character)')
+        // Not to the shop listeners: they open the merchant window, for a tab just opened.
+        broadcast('tracker:shop', currentShop())
+      }
       setStatus({ character: name, server: (ev['server'] as number | undefined) ?? null })
       learnServer(status.server)
       fieldBosses.setServer((ev['server'] as number | undefined) ?? null)

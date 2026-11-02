@@ -903,6 +903,7 @@ export const ES: Record<string, string> = {
   'Restart to update': 'Reiniciá para actualizar',
   'The kill feed no longer wraps its title bar onto two lines, and it can be resized from its corner (a double-click there resets it).': 'El killfeed ya no parte su barra de título en dos líneas, y se puede cambiar de tamaño desde su esquina (doble click ahí lo resetea).',
   'The Black Cloud Merchant\'s pets window goes away once the shop is gone from the screen, and comes back when you open a tab of the shop again.': 'La ventana de pets del Black Cloud Merchant se va cuando la tienda ya no está en pantalla, y vuelve cuando abrís de nuevo una pestaña de la tienda.',
+  'The Black Cloud Merchant\'s pets are forgotten when you switch characters: each character has its own shop.': 'Los pets del Black Cloud Merchant se olvidan al cambiar de personaje: cada personaje tiene su propia tienda.',
   'Escape puts the dashboard away (back to the game); in a text box it leaves the box first, and on a pet\'s map it closes the map first.': 'Escape esconde el dashboard (volvés al juego); en un cuadro de texto primero sale del cuadro, y en el mapa de un pet primero cierra el mapa.',
   'Waiting for the screen to change': 'Esperando que cambie la pantalla',
   'No map on screen': 'No hay mapa en pantalla',
