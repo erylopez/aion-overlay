@@ -14,7 +14,7 @@ import { loc, t } from '@/lib/i18n.ts'
 import { leadLabel, setAlert, setLead } from '@/lib/timerView.ts'
 import { useApp } from '@/stores/app.ts'
 import type { SyncResult } from '@shared/lokthar.ts'
-import { bossPortrait, FIELD_BOSSES, leadChoices, TIMERS, type BossZone, type TimerDef } from '@shared/timers.ts'
+import { bossPortrait, bossState, FIELD_BOSSES, leadChoices, TIMERS, type BossZone, type TimerDef } from '@shared/timers.ts'
 
 const store = useApp()
 const cfg = computed(() => store.settings.timers)
@@ -43,7 +43,7 @@ const stamp = (ms: number): string => new Date(ms).toLocaleString(loc(), { month
 const rows = computed(() =>
   FIELD_BOSSES.filter((b) => b.zone === zone.value).map((b) => {
     const def = TIMERS.find((t) => t.schedule.kind === 'boss' && t.schedule.boss === b.boss) as TimerDef
-    const state = store.fieldBosses[b.boss] ?? null
+    const state = bossState(b.boss, store.fieldBosses, now.value, cfg.value.region)
     const rank = !state ? 3 : state.up ? 0 : state.at < now.value ? 1 : 2
     return { ...b, def, state, rank, portrait: bossPortrait(b.boss) }
   }).sort((a, b) => a.rank - b.rank || (a.state?.at ?? 0) - (b.state?.at ?? 0) || a.name.localeCompare(b.name)),
@@ -130,7 +130,8 @@ const on = (def: TimerDef): boolean => (cfg.value.enabled[def.id] ?? false) && (
               </template>
             </td>
             <td class="px-3 text-xs text-darker">
-              <template v-if="r.state">
+              <div v-if="r.state?.source === 'schedule'" class="text-darkest" :title="t('The game gives it no time: its fixed schedule, as the game counts it')">{{ t('by its schedule') }}</div>
+              <template v-else-if="r.state">
                 <div>{{ ago(r.state.seen) }}<span v-if="r.state.source === 'shared'" class="text-darkest"> · {{ t('shared') }}</span></div>
                 <div class="text-[11px] text-darkest">{{ stamp(r.state.seen) }}</div>
               </template>

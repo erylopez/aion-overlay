@@ -15,6 +15,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       'The Field Bosses page has an Abyss tab: Argo, Watcher Kaira, the three Guardian Lord Nahmas and the Executors, with their respawns and alerts, updated each time you enter the Abyss.',
       'The timer bar names a timer the moment you hover its icon, with the time it starts.',
+      'Watcher Kaira has its time on the Abyss tab (the game sends none: it follows its schedule, every 3 hours), and the Kaira alert now matches the game\'s countdown. Guardian Lord Nahma\'s alert takes the game\'s own time once you enter the Abyss, and is at 21:10, as the game has it. The South America region is confirmed (UTC-3).',
+      'The Lokthar sync sends the Abyss\'s bosses too, so lokthar.com follows Argo, the Spirit King from the game (it respawns 12 hours after it dies).',
     ],
   },
   {

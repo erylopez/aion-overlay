@@ -21,8 +21,13 @@
  * - Siege Bosses: 30 minutes into each siege (Thursday 21:30 New York).
  * - Guardian Lord Nahma: Friday and Sunday at 21:00 server time (allthings.how, metabot.gg; the
  *   timer showed Friday 21:00 New York).
- * - Watcher Kaira: every 4 hours from 01:00 server time, since the 2026-09-02 patch (The Games
- *   Wiki; older guides say every 3 hours). The timer showed 01:00 New York, which either fits.
+ * - Watcher Kaira: every 3 hours from 01:00 UTC, in every region (guildmanager.app, lokthar.com).
+ *   The game's own countdown said 19:00 Buenos Aires (22:00 UTC) on 2026-11-03, twice; the Games
+ *   Wiki's "every 4 hours from 01:00 server time" put it at 21:00 on the South American servers.
+ *   Its Abyss list gives Kaira no time, so the Field Bosses page's Kaira is this schedule too.
+ * - Guardian Lord Nahma: the Abyss list's own time once read, the schedule until then. The list
+ *   said Friday 21:10 on the South American servers (UTC-3) on 2026-11-03, 10 minutes after the
+ *   guides' 21:00: the schedule is at 21:10. Sunday is the guides', not seen in the game yet.
  * - Daily reset at 07:00 UTC for every global region (16:00 Korean server time: aion2hub.com and
  *   allthings.how; 04:00 Buenos Aires, as the player and lokthar.com have it), weekly reset on
  *   Wednesday at the same time. Fixed in UTC: no daylight saving.
@@ -47,8 +52,9 @@ export type Schedule =
   /** Every `every` minutes, at `offset` minutes past each period (periods counted from 00:00 UTC). */
   | { kind: 'every'; every: number; offset: number }
   /** On these weekdays (0 = Sunday), at these times (minutes after midnight), in the server
-   *  region's time zone, or in `zone` for every region. */
-  | { kind: 'zoned'; days: number[]; times: number[]; zone?: string }
+   *  region's time zone, or in `zone` for every region. `bosses`: the field bosses it is (their
+   *  ids in the map's list), whose respawn the list gives, when it has, over the schedule. */
+  | { kind: 'zoned'; days: number[]; times: number[]; zone?: string; bosses?: number[] }
   /** A field boss: when it respawns, from the map's field boss list (see FieldBossState). */
   | { kind: 'boss'; boss: number }
 
@@ -58,8 +64,9 @@ export interface FieldBossState {
   at: number
   /** When the list said so. */
   seen: number
-  /** Your own map, or other players' (the shared timers, confirmed by several of them). */
-  source?: 'map' | 'shared'
+  /** Your own map, or other players' (the shared timers, confirmed by several of them), or its
+   *  schedule (a boss the list gives no time for: Watcher Kaira). */
+  source?: 'map' | 'shared' | 'schedule'
 }
 /** By the list's own boss id (101021 = Eternal Gartua). */
 export type FieldBosses = Record<number, FieldBossState>
@@ -73,8 +80,8 @@ export const REGIONS: { id: Region; label: string; zone: string; confirmed: bool
   { id: 'na-east', label: 'NA East', zone: 'America/New_York', confirmed: true },
   { id: 'na-west', label: 'NA West', zone: 'America/Los_Angeles', confirmed: false },
   { id: 'europe', label: 'Europe', zone: 'Europe/Berlin', confirmed: false },
-  // São Paulo time (UTC-3, no daylight saving) is assumed for the South American servers.
-  { id: 'south-america', label: 'South America', zone: 'America/Sao_Paulo', confirmed: false },
+  // São Paulo time (UTC-3, no daylight saving): the player's server, Ariel, runs on it (2026-11-03).
+  { id: 'south-america', label: 'South America', zone: 'America/Sao_Paulo', confirmed: true },
 ]
 const zoneOf = (region: Region): string => REGIONS.find((r) => r.id === region)?.zone ?? 'America/New_York'
 
@@ -143,6 +150,22 @@ export const FIELD_BOSSES: { boss: number; name: string; zone: BossZone }[] = [
 ]
 /** The zone a boss of the map's list is in (null: not known yet). */
 export const bossZone = (boss: number): BossZone | null => FIELD_BOSSES.find((b) => b.boss === boss)?.zone ?? null
+/** The bosses the map's list gives no time for (0), on a fixed schedule instead: its timer. */
+const ON_SCHEDULE: Partial<Record<number, TimerId>> = { 2002: 'kaira' }
+
+/**
+ * A boss's state: as the list last said, or for one on a schedule, the schedule's next start
+ * unless the list was read since its last start (it said Kaira was alive, say).
+ */
+export function bossState(boss: number, bosses: FieldBosses, now: number, region: Region = 'south-america'): FieldBossState | null {
+  const b = bosses[boss] ?? null
+  const id = ON_SCHEDULE[boss]
+  const s = id ? TIMERS.find((t) => t.id === id)?.schedule : undefined
+  if (!s || s.kind === 'boss') return b
+  if (b && nextStart(s, b.seen, region) > now) return b
+  return { up: false, at: nextStart(s, now, region), seen: now, source: 'schedule' }
+}
+
 /** A known boss's portrait (public/bosses), or null. */
 export const bossPortrait = (boss: number): string | null => (bossZone(boss) ? `bosses/${boss}.webp` : null)
 
@@ -187,7 +210,7 @@ export const TIMERS: TimerDef[] = [
     id: 'kaira',
     name: 'Watcher Kaira',
     detail: 'Abyss boss in Lower Reshanta, at a random spot',
-    schedule: { kind: 'zoned', days: EVERY_DAY, times: [hm(1), hm(5), hm(9), hm(13), hm(17), hm(21)] },
+    schedule: { kind: 'every', every: 180, offset: 60 },
     lead: 10,
     confirmed: false,
     defaultOn: false,
@@ -214,7 +237,7 @@ export const TIMERS: TimerDef[] = [
     id: 'nahma',
     name: 'Guardian Lord Nahma',
     detail: 'Abyss field boss in Lower Reshanta',
-    schedule: { kind: 'zoned', days: [0, 5], times: [hm(21)] },
+    schedule: { kind: 'zoned', days: [0, 5], times: [hm(21, 10)], bosses: [2003, 2004, 2005] },
     lead: 10,
     confirmed: true,
     defaultOn: false,
@@ -253,7 +276,7 @@ for (const b of FIELD_BOSSES) {
   TIMERS.push({
     id: `fb-${b.boss}`,
     name: b.name,
-    detail: b.zone === 'abyss' ? 'Abyss boss: updated each time you enter the Abyss' : 'Verteron field boss: open the map to update',
+    detail: ON_SCHEDULE[b.boss] ? 'Abyss boss on a fixed schedule, every 3 hours' : b.zone === 'abyss' ? 'Abyss boss: updated each time you enter the Abyss' : 'Verteron field boss: open the map to update',
     schedule: { kind: 'boss', boss: b.boss },
     lead: 5,
     confirmed: true,
@@ -286,13 +309,15 @@ function zoneOffset(zone: string, t: number): number {
 export function nextStart(s: Schedule, from: number, region: Region = 'south-america', bosses: FieldBosses = {}): number {
   if (s.kind === 'boss') {
     // Its respawn, if the map said it is dead; up, or never seen, there is no next start to give.
-    const b = bosses[s.boss]
+    const b = bossState(s.boss, bosses, from, region)
     return b && !b.up && b.at >= from ? b.at : Number.POSITIVE_INFINITY
   }
   if (s.kind === 'every') {
     const period = s.every * MINUTE
     return Math.ceil((from - s.offset * MINUTE) / period) * period + s.offset * MINUTE
   }
+  const told = (s.bosses ?? []).map((id) => bosses[id]).filter((b) => b && !b.up && b.at >= from).map((b) => b!.at)
+  if (told.length) return Math.min(...told)
   // Zoned: the next 8 days of the zone's calendar, each start at its own UTC offset.
   const zone = s.zone ?? zoneOf(region)
   const today = from + zoneOffset(zone, from)
