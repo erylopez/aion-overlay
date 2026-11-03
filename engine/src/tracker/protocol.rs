@@ -536,7 +536,8 @@ fn plausible_ms(b: &[u8], at: usize) -> bool {
 /// <x y z f32> [1 byte] <spawned u64 ms>`, dead `00 <id varint> <respawns u64
 /// ms>`: the map's field boss list, every ~3 s while the map is open. Some
 /// entries carry a byte more before the time, so the time is found where an ms
-/// timestamp fits.
+/// timestamp fits, or a 0 (no time: Watcher Kaira in the Abyss's list, world
+/// 20, sent as you enter it; its bosses are 2001-2008, the owner's 2026-11-03 log).
 pub fn field_bosses(frame: &[u8]) -> Option<(u32, Vec<FieldBoss>)> {
     let b = body(frame, OP_FIELD_BOSSES)?;
     let world = u32_at(b, 2)?;
@@ -557,7 +558,7 @@ pub fn field_bosses(frame: &[u8]) -> Option<(u32, Vec<FieldBoss>)> {
                 return None;
             }
         }
-        pos += (0..5).find(|&k| plausible_ms(b, pos + k))?;
+        pos += (0..5).find(|&k| plausible_ms(b, pos + k) || u64_at(b, pos + k) == Some(0))?;
         out.push(FieldBoss { id, up, at_ms: u64_at(b, pos)? });
         pos += 8;
     }
@@ -956,6 +957,29 @@ mod tests {
         assert_eq!(read("000801b4c4040403"), Some((80_000_001, vec![0, 4])), "the first value left out");
         assert_eq!(read("000001b4c40403"), Some((80_000_001, vec![])), "Ascension Trial: none left");
         assert_eq!(read("000c0187930389021903"), Some((60_000_001, vec![265, 25])), "energy");
+    }
+
+    /// The Abyss's list as you enter it (2026-11-03): one boss with no time.
+    #[test]
+    fn the_abyss_bosses_read_with_a_missing_time() {
+        let h = "01910000140000000800d40f00c03757b3a101000000d10f00bf8da4a101000000d20f000000000000000000d80f00534caea101000000d30fc03757b3a101000000d60f00534caea101000000d50fc03757b3a101000000d70f00534caea1010000000000";
+        // The log's bytes start at the opcode.
+        let (world, list) = field_bosses(&frame(OP_FIELD_BOSSES, &hex(h)[2..])).unwrap();
+        assert_eq!(world, 20);
+        let got: Vec<_> = list.iter().map(|b| (b.id, b.up, b.at_ms)).collect();
+        assert_eq!(
+            got,
+            vec![
+                (2004, false, 1_794_010_200_000),
+                (2001, false, 1_793_762_115_328),
+                (2002, false, 0),
+                (2008, false, 1_793_925_600_000),
+                (2003, false, 1_794_010_200_000),
+                (2006, false, 1_793_925_600_000),
+                (2005, false, 1_794_010_200_000),
+                (2007, false, 1_793_925_600_000),
+            ]
+        );
     }
 
     #[test]

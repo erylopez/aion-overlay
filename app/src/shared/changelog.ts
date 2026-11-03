@@ -11,6 +11,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.3.11',
+    items: [
+      'The Field Bosses page has an Abyss tab: Argo, Watcher Kaira, the three Guardian Lord Nahmas and the Executors, with their respawns and alerts, updated each time you enter the Abyss.',
+      'The timer bar names a timer the moment you hover its icon, with the time it starts.',
+    ],
+  },
+  {
     version: '0.3.10',
     items: [
       'The kill feed no longer wraps its title bar onto two lines, and it can be resized from its corner (a double-click there resets it).',

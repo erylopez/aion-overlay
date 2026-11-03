@@ -99,36 +99,52 @@ export interface TimerDef {
 export const defaultShown = (def: TimerDef): boolean => def.schedule.kind !== 'boss' || def.id === 'gartua'
 
 /**
- * Verteron's field bosses by their id in the map's list (`01 91`): named 2026-10-13 from
+ * The field bosses by their id in the map's list (`01 91`). Verteron's named 2026-10-13 from
  * fieldboss_list.pcap, the up ones by their position (each a questlog.gg marker) and the dead ones
- * by their times against the in-game list. Other zones' ids are not known yet.
+ * by their times against the in-game list; the Abyss's below. Other zones' ids are not known yet.
  */
-export const FIELD_BOSSES: { boss: number; name: string }[] = [
-  { boss: 101001, name: 'Neikel of the East' },
-  { boss: 101002, name: 'Rotten Kutar' },
-  { boss: 101003, name: 'Kernon of the West' },
-  { boss: 101004, name: 'Kusan the Mad Gladiator' },
-  { boss: 101005, name: 'Ritualist Garshim' },
-  { boss: 101006, name: 'Bodyguard Teegant' },
-  { boss: 101007, name: 'Blooming Korin' },
-  { boss: 101008, name: 'Furious Saursus' },
-  { boss: 101009, name: 'Bloodfang Pnyn' },
-  { boss: 101010, name: 'Heretic Layla' },
-  { boss: 101011, name: 'Black Tentacle Lawa' },
-  { boss: 101012, name: 'Phantasm Kasia' },
-  { boss: 101013, name: 'Centurion Demiros' },
-  { boss: 101014, name: 'Divine Ansas' },
-  { boss: 101015, name: 'Harvest Manager Moshav' },
-  { boss: 101016, name: "Sentinel K'nash" },
-  { boss: 101017, name: 'Scholar Aulla' },
-  { boss: 101018, name: 'Forest Warrior Aullamu' },
-  { boss: 101019, name: 'Chaser Taulo' },
-  { boss: 101020, name: 'Researcher Setram' },
-  { boss: 101021, name: 'Eternal Gartua' },
-  { boss: 101022, name: 'Silent Dartan' },
-  { boss: 101023, name: 'Soul Ruler Kashapa' },
-  { boss: 101024, name: 'High Commander Lagta' },
+export type BossZone = 'verteron' | 'abyss'
+export const FIELD_BOSSES: { boss: number; name: string; zone: BossZone }[] = [
+  { boss: 101001, name: 'Neikel of the East', zone: 'verteron' },
+  { boss: 101002, name: 'Rotten Kutar', zone: 'verteron' },
+  { boss: 101003, name: 'Kernon of the West', zone: 'verteron' },
+  { boss: 101004, name: 'Kusan the Mad Gladiator', zone: 'verteron' },
+  { boss: 101005, name: 'Ritualist Garshim', zone: 'verteron' },
+  { boss: 101006, name: 'Bodyguard Teegant', zone: 'verteron' },
+  { boss: 101007, name: 'Blooming Korin', zone: 'verteron' },
+  { boss: 101008, name: 'Furious Saursus', zone: 'verteron' },
+  { boss: 101009, name: 'Bloodfang Pnyn', zone: 'verteron' },
+  { boss: 101010, name: 'Heretic Layla', zone: 'verteron' },
+  { boss: 101011, name: 'Black Tentacle Lawa', zone: 'verteron' },
+  { boss: 101012, name: 'Phantasm Kasia', zone: 'verteron' },
+  { boss: 101013, name: 'Centurion Demiros', zone: 'verteron' },
+  { boss: 101014, name: 'Divine Ansas', zone: 'verteron' },
+  { boss: 101015, name: 'Harvest Manager Moshav', zone: 'verteron' },
+  { boss: 101016, name: "Sentinel K'nash", zone: 'verteron' },
+  { boss: 101017, name: 'Scholar Aulla', zone: 'verteron' },
+  { boss: 101018, name: 'Forest Warrior Aullamu', zone: 'verteron' },
+  { boss: 101019, name: 'Chaser Taulo', zone: 'verteron' },
+  { boss: 101020, name: 'Researcher Setram', zone: 'verteron' },
+  { boss: 101021, name: 'Eternal Gartua', zone: 'verteron' },
+  { boss: 101022, name: 'Silent Dartan', zone: 'verteron' },
+  { boss: 101023, name: 'Soul Ruler Kashapa', zone: 'verteron' },
+  { boss: 101024, name: 'High Commander Lagta', zone: 'verteron' },
+  // The Abyss's, in its list (world 20, sent as you enter the Abyss): named 2026-11-03 by their
+  // times against the in-game list (Argo, Kaira, the Nahmas, the Executors). Which Nahma is which,
+  // and the Executors' order, are guessed from the game listing them in id order.
+  { boss: 2001, name: 'Argo, the Spirit King', zone: 'abyss' },
+  { boss: 2002, name: 'Watcher Kaira', zone: 'abyss' },
+  { boss: 2003, name: 'Guardian Lord Nahma I', zone: 'abyss' },
+  { boss: 2004, name: 'Guardian Lord Nahma II', zone: 'abyss' },
+  { boss: 2005, name: 'Guardian Lord Nahma III', zone: 'abyss' },
+  { boss: 2006, name: 'Executor Tamasa', zone: 'abyss' },
+  { boss: 2007, name: 'Executor Argo', zone: 'abyss' },
+  { boss: 2008, name: 'Executor Kaira', zone: 'abyss' },
 ]
+/** The zone a boss of the map's list is in (null: not known yet). */
+export const bossZone = (boss: number): BossZone | null => FIELD_BOSSES.find((b) => b.boss === boss)?.zone ?? null
+/** A known boss's portrait (public/bosses), or null. */
+export const bossPortrait = (boss: number): string | null => (bossZone(boss) ? `bosses/${boss}.webp` : null)
 
 export const TIMERS: TimerDef[] = [
   {
@@ -237,7 +253,7 @@ for (const b of FIELD_BOSSES) {
   TIMERS.push({
     id: `fb-${b.boss}`,
     name: b.name,
-    detail: 'Verteron field boss: open the map to update',
+    detail: b.zone === 'abyss' ? 'Abyss boss: updated each time you enter the Abyss' : 'Verteron field boss: open the map to update',
     schedule: { kind: 'boss', boss: b.boss },
     lead: 5,
     confirmed: true,

@@ -2,13 +2,15 @@
 // The timers as a bar over the game: each timer with its alert on (the Event Alerts and Field Bosses pages) that starts
 // within the next 13 hours, soonest first, as its icon and a countdown. Events have their own icon
 // (the rift's stands for the invasion and the siege too), field bosses their portrait, the rest a
-// short name. Moved by dragging; sized to what it shows, and hidden with nothing to show.
+// short name. Moved by dragging; sized to what it shows, and hidden with nothing to show. Hovering
+// one names it right away, in a label under the bar (the window grows to it: a title's tooltip
+// waits a second or so).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { bridge } from '@/lib/bridge.ts'
 import { loc, t } from '@/lib/i18n.ts'
 import { windowDrag } from '@/lib/windowDrag.ts'
 import { useApp } from '@/stores/app.ts'
-import { nextStart, TIMERS, type TimerDef, type TimerId } from '@shared/timers.ts'
+import { bossPortrait, nextStart, TIMERS, type TimerDef, type TimerId } from '@shared/timers.ts'
 
 /** Starts further away than this are left off the bar. */
 const HORIZON_MS = 13 * 3600_000
@@ -35,7 +37,7 @@ const LABELS: Partial<Record<TimerId, string>> = {
   weeklyReset: 'Weekly',
 }
 const icon = (def: TimerDef): string | null =>
-  def.schedule.kind === 'boss' ? `bosses/${def.schedule.boss}.webp` : (ICONS[def.id] ?? null)
+  def.schedule.kind === 'boss' ? bossPortrait(def.schedule.boss) : (ICONS[def.id] ?? null)
 
 const alerting = computed(() => new Map(store.alerting.map((a) => [a.id, a.at])))
 
@@ -59,6 +61,15 @@ function countdown(at: number): string {
   const ss = String(s % 60).padStart(2, '0')
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
 }
+
+/** The timer hovered, and where its label goes: under it (its offset from the page's left). */
+const hovered = ref<{ id: TimerId; x: number } | null>(null)
+const hoveredItem = computed(() => (hovered.value ? items.value.find((i) => i.def.id === hovered.value!.id) : undefined))
+function hover(id: TimerId, e: PointerEvent): void {
+  const el = e.currentTarget as HTMLElement
+  hovered.value = { id, x: el.offsetLeft }
+}
+const startsAt = (at: number): string => new Date(at).toLocaleTimeString(loc(), { hour: '2-digit', minute: '2-digit' })
 
 const drag = windowDrag({ move: 'timerbar:moveTo', end: 'timerbar:dragEnd' })
 
@@ -97,13 +108,15 @@ onBeforeUnmount(() => {
         class="m-1.5 flex w-max cursor-move items-center gap-3 whitespace-nowrap rounded-lg border border-card bg-darker px-2.5 py-1.5 shadow-card"
         :style="{ opacity: store.settings.timerBar.opacity }"
         :title="t('Drag to move')"
-        @pointerdown="drag.onPointerDown"
+        @pointerdown="(e) => ((hovered = null), drag.onPointerDown(e))"
       >
         <div
           v-for="{ def, at } in items"
           :key="def.id"
           class="flex shrink-0 items-center gap-1.5"
-          :title="`${t(def.name)}: ${new Date(at).toLocaleTimeString(loc(), { hour: '2-digit', minute: '2-digit' })}`"
+          title=""
+          @pointerenter="hover(def.id, $event)"
+          @pointerleave="hovered = null"
         >
           <img v-if="icon(def)" :src="icon(def)!" class="size-4 shrink-0 rounded-sm object-cover" alt="" draggable="false" />
           <span v-else class="text-[11px] font-semibold uppercase tracking-wide text-darker">{{ t(LABELS[def.id] ?? def.name) }}</span>
@@ -114,6 +127,15 @@ onBeforeUnmount(() => {
             :style="{ minWidth: `${countdown(at).length}ch` }"
           >{{ countdown(at) }}</span>
         </div>
+      </div>
+      <!-- In the flow, not floating: the window is measured with it, so it isn't cut off. -->
+      <div
+        v-if="hoveredItem"
+        class="mx-1.5 mb-1.5 w-max whitespace-nowrap rounded-md border border-card bg-darker px-2 py-1 text-xs shadow-card"
+        :style="{ marginLeft: `${hovered!.x}px`, opacity: store.settings.timerBar.opacity }"
+      >
+        <span class="font-semibold text-default">{{ t(hoveredItem.def.name) }}</span>
+        <span class="ml-1.5 tabular-nums text-darker">{{ startsAt(hoveredItem.at) }}</span>
       </div>
     </div>
   </div>

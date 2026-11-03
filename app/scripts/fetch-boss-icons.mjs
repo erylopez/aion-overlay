@@ -8,7 +8,8 @@
  * Writes src/renderer/src/data/fieldBossNpcs.json (list id -> monster id) for reference. Images
  * already present are kept unless --force. Re-run when bosses are added.
  *
- * Source: questlog.gg's Aion 2 database and map (global client, `en`), used with credit.
+ * Source: questlog.gg's Aion 2 database and map (global client, `en`), used with credit. questlog
+ * has no portrait of Executor Tamasa (2006): 2006.webp is metabot.gg's (mob_radvima_01), by hand.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -30,9 +31,9 @@ async function trpc(proc, input) {
   return (await res.json()).result.data
 }
 
-// The bosses as timers.ts lists them: { boss: 101001, name: 'Neikel of the East' }.
+// The bosses as timers.ts lists them: { boss: 101001, name: 'Neikel of the East', zone: 'verteron' }.
 const src = readFileSync(TIMERS, 'utf8')
-const bosses = [...src.matchAll(/\{ boss: (\d+), name: (['"])(.+?)\2 \}/g)].map((m) => ({ boss: Number(m[1]), name: m[3] }))
+const bosses = [...src.matchAll(/\{ boss: (\d+), name: (['"])(.+?)\2(?:, zone: '\w+')? \}/g)].map((m) => ({ boss: Number(m[1]), name: m[3] }))
 console.log(`${bosses.length} bosses in timers.ts`)
 
 console.log('map markers (one large download)…')
@@ -42,7 +43,11 @@ mkdirSync(OUT, { recursive: true })
 const npcs = {}
 for (const b of bosses) {
   const world = String(Math.floor(b.boss / 100))
-  const m = markers.find((x) => x.mapWorldId === world && x.name === b.name)
+  // A name the game gives several bosses (the Abyss's three Guardian Lord Nahmas) is told apart in
+  // timers.ts by a numeral: the nth of its monsters, by their ids.
+  const [, base, numeral] = b.name.match(/^(.+?)(?: (I|II|III|IV|V))?$/)
+  const same = [...new Map(markers.filter((x) => x.mapWorldId === world && x.name === base).map((x) => [x.dbId, x])).values()].sort((x, y) => Number(x.dbId) - Number(y.dbId))
+  const m = same[numeral ? ['I', 'II', 'III', 'IV', 'V'].indexOf(numeral) : 0]
   if (!m) {
     console.warn(`  ${b.boss} ${b.name}: no named marker in world ${world}`)
     continue

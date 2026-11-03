@@ -16,7 +16,7 @@ import { NO_METER, type MeterData } from '@shared/meter.ts'
 import type { Settings } from '@shared/settings.ts'
 import { serverName } from '@shared/servers.ts'
 import { LANGS } from '@shared/i18n.ts'
-import { TIMERS } from '@shared/timers.ts'
+import { bossZone, TIMERS } from '@shared/timers.ts'
 
 const emit = defineEmits<{ go: [page: string] }>()
 const store = useApp()
@@ -119,7 +119,7 @@ const nextEvent = computed(() => {
   const on = TIMERS.filter((d) => d.schedule.kind !== 'boss' && t.enabled[d.id] && t.shown[d.id])
   return on.map((def) => ({ def, at: timerNext(def, now.value) })).sort((a, b) => a.at - b.at)[0] ?? null
 })
-const bossesUp = computed(() => Object.values(store.fieldBosses).filter((b) => b.up).length)
+const bossesUp = computed(() => Object.entries(store.fieldBosses).filter(([id, b]) => b.up && bossZone(Number(id)) !== 'abyss').length)
 const pvp = computed(() => ({ kills: store.pvp.filter((k) => k.mine).length, deaths: store.pvp.filter((k) => k.died).length }))
 const myDps = computed(() => meter.value.rows.find((r) => r.you) ?? null)
 

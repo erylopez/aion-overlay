@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Field Bosses: each one's state as your map last listed it (alive, or how long until it
 // respawns), when that was, and its alert. The list comes from the game when you open the map; the
-// Lokthar sync can fill in what others' maps saw. Only Verteron's bosses are known so far.
+// Lokthar sync can fill in what others' maps saw. Verteron's bosses and the Abyss's (read as you
+// enter the Abyss, by any of your characters) are known so far.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Button from '@/components/Button.vue'
 import Toggle from '@/components/Toggle.vue'
@@ -13,7 +14,7 @@ import { loc, t } from '@/lib/i18n.ts'
 import { leadLabel, setAlert, setLead } from '@/lib/timerView.ts'
 import { useApp } from '@/stores/app.ts'
 import type { SyncResult } from '@shared/lokthar.ts'
-import { FIELD_BOSSES, leadChoices, TIMERS, type TimerDef } from '@shared/timers.ts'
+import { bossPortrait, FIELD_BOSSES, leadChoices, TIMERS, type BossZone, type TimerDef } from '@shared/timers.ts'
 
 const store = useApp()
 const cfg = computed(() => store.settings.timers)
@@ -21,8 +22,11 @@ const now = ref(Date.now())
 const ticker = setInterval(() => (now.value = Date.now()), 1000)
 onBeforeUnmount(() => clearInterval(ticker))
 
-const ZONES = [{ id: 'verteron', label: 'Verteron' }] as const
-const zone = ref<(typeof ZONES)[number]['id']>('verteron')
+const ZONES: { id: BossZone; label: string }[] = [
+  { id: 'verteron', label: 'Verteron' },
+  { id: 'abyss', label: 'Abyss' },
+]
+const zone = ref<BossZone>('verteron')
 
 function ago(ms: number): string {
   const s = Math.max(0, Math.round((now.value - ms) / 1000))
@@ -37,11 +41,11 @@ const stamp = (ms: number): string => new Date(ms).toLocaleString(loc(), { month
 
 /** Alive first, then by respawn, the ones never seen last. */
 const rows = computed(() =>
-  FIELD_BOSSES.map((b) => {
+  FIELD_BOSSES.filter((b) => b.zone === zone.value).map((b) => {
     const def = TIMERS.find((t) => t.schedule.kind === 'boss' && t.schedule.boss === b.boss) as TimerDef
     const state = store.fieldBosses[b.boss] ?? null
     const rank = !state ? 3 : state.up ? 0 : state.at < now.value ? 1 : 2
-    return { ...b, def, state, rank }
+    return { ...b, def, state, rank, portrait: bossPortrait(b.boss) }
   }).sort((a, b) => a.rank - b.rank || (a.state?.at ?? 0) - (b.state?.at ?? 0) || a.name.localeCompare(b.name)),
 )
 const alive = computed(() => rows.value.filter((r) => r.state?.up).length)
@@ -60,7 +64,10 @@ const on = (def: TimerDef): boolean => (cfg.value.enabled[def.id] ?? false) && (
 
 <template>
   <div>
-    <PageHeader title="Field Bosses" about="When each field boss is up or respawns, from the game's own list: open the map in game to update it. Turn on an alert to hear when one is due." />
+    <PageHeader
+      title="Field Bosses"
+      about="When each field boss is up or respawns, from the game's own list: open the map in game to update it (the Abyss's bosses update each time you enter the Abyss). Turn on an alert to hear when one is due."
+    />
 
     <div class="mb-4 flex items-center gap-4 border-b border-card">
       <button
@@ -70,7 +77,7 @@ const on = (def: TimerDef): boolean => (cfg.value.enabled[def.id] ?? false) && (
         :class="['-mb-px border-b-2 px-1 pb-2 text-sm font-medium', zone === z.id ? 'border-accent text-default' : 'border-transparent text-darker hover:text-default']"
         @click="zone = z.id"
       >
-        {{ z.label }}
+        {{ t(z.label) }}
       </button>
       <span class="pb-2 text-xs text-darkest">{{ t("Other zones' bosses are not known yet.") }}</span>
       <span class="ml-auto pb-2 text-xs text-darker"><span class="font-semibold text-green">{{ alive }}</span> {{ t('alive') }}</span>
@@ -102,7 +109,8 @@ const on = (def: TimerDef): boolean => (cfg.value.enabled[def.id] ?? false) && (
           <tr v-for="r in rows" :key="r.boss" class="hover:bg-card">
             <td class="py-2 pl-4">
               <div class="flex items-center gap-3">
-                <img :src="`bosses/${r.boss}.webp`" alt="" loading="lazy" draggable="false" class="size-9 shrink-0 rounded-lg border border-card object-cover" />
+                <img v-if="r.portrait" :src="r.portrait" alt="" loading="lazy" draggable="false" class="size-9 shrink-0 rounded-lg border border-card object-cover" />
+                <span v-else class="grid size-9 shrink-0 place-items-center rounded-lg border border-card bg-card text-sm font-semibold text-darker">{{ r.name[0] }}</span>
                 <span class="font-medium">{{ r.name }}</span>
               </div>
             </td>
