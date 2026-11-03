@@ -446,8 +446,10 @@ pub fn character_list(frame: &[u8]) -> Option<Vec<ListedCharacter>> {
 
 /// `0B 61 <count varint>`, then per counter `<flags u8> <id u32>` and its values: a u64 for each
 /// of flags 01 and 02, a varint for each of 04 and 08 (a value of 0 is left out, its flag
-/// clear). Your character's counters, at login: Odyle energy is 60000001 (basic, charged), the
-/// Shugo Festival keys 1 (the owner's 2026-10-31 logs, 73 counters).
+/// clear; read back as 0 when a later value follows, so each keeps its place). Your character's
+/// counters, at login: Odyle energy is 60000001 (basic, charged), the Shugo Festival keys 1 (the
+/// owner's 2026-10-31 logs, 73 counters), Nightmare 4 (daily entries, tickets), the Ascension
+/// Trial's entries left 80000001 and its weekly cap 70000001 (a friend's captures, server 1406).
 pub fn counters(frame: &[u8]) -> Option<Vec<(u32, Vec<u64>)>> {
     let b = body(frame, OP_COUNTERS)?;
     let (count, mut at) = varint(b, 0)?;
@@ -469,11 +471,18 @@ fn counter_at(b: &[u8], start: usize) -> Option<(u32, Vec<u64>, usize)> {
     let id = u32_at(b, start + 1)?;
     let mut at = start + 5;
     let mut values = Vec::new();
+    // The second of a pair alone: the first was 0.
+    if flags & 0x03 == 0x02 {
+        values.push(0);
+    }
     for bit in [0x01, 0x02] {
         if flags & bit != 0 {
             values.push(u64_at(b, at)?);
             at += 8;
         }
+    }
+    if flags & 0x0C == 0x08 {
+        values.push(0);
     }
     for bit in [0x04, 0x08] {
         if flags & bit != 0 {
@@ -936,6 +945,17 @@ mod tests {
         assert_eq!(read("00008296980003"), Some((10_000_002, vec![])));
         assert_eq!(read("00030300000080fd720000000000e0b43d000000000003"), Some((3, vec![7_536_000, 4_044_000])));
         assert_eq!(read("000182969800d0fb010000000000"), None, "cut short");
+    }
+
+    /// A friend's captures (Rawx, server 1406): a Nightmare entered with 14 daily entries and 4
+    /// tickets, the Ascension Trial spent to none left, energy spent.
+    #[test]
+    fn runs_spent_are_told_as_they_happen() {
+        let read = |h: &str| counter(&frame(OP_COUNTER, &hex(h)));
+        assert_eq!(read("000c040000000d0403"), Some((4, vec![13, 4])), "Nightmare: 13 daily entries, 4 tickets");
+        assert_eq!(read("000801b4c4040403"), Some((80_000_001, vec![0, 4])), "the first value left out");
+        assert_eq!(read("000001b4c40403"), Some((80_000_001, vec![])), "Ascension Trial: none left");
+        assert_eq!(read("000c0187930389021903"), Some((60_000_001, vec![265, 25])), "energy");
     }
 
     #[test]

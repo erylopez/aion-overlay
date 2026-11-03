@@ -922,6 +922,8 @@ impl Tracker {
         if changed {
             // Another character, maybe on the other side: who counts as an enemy changes.
             self.clear_enemies(ts);
+            // The last character's Hidden Cubes are not this one's (the same zone keeps them otherwise).
+            self.clear_cubes();
             self.save();
             tracing::info!("character: {} on {}{}", who.name, who.server, old.as_ref().map(|o| format!(" (was {o})")).unwrap_or_default());
             (self.emit)(json!({

@@ -16,6 +16,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       'The kill feed no longer wraps its title bar onto two lines, and it can be resized from its corner (a double-click there resets it).',
       'The Black Cloud Merchant\'s pets window goes away once the shop is gone from the screen, and comes back when you open a tab of the shop again.',
       'The Black Cloud Merchant\'s pets are forgotten when you switch characters: each character has its own shop.',
+      'Hidden Cubes are cleared when you switch characters, like the merchant\'s pets.',
+      'The Characters page takes a Nightmare or an Ascension Trial off as soon as you enter it, and the Ascension Trial shows the entries you have left (it showed the weekly cap before).',
       'Escape puts the dashboard away (back to the game); in a text box it leaves the box first, and on a pet\'s map it closes the map first.',
     ],
   },

@@ -79,8 +79,8 @@ function ago(ms: number): string {
 const stamp = (ms: number): string => new Date(ms).toLocaleString(loc(), { weekday: 'short', hour: '2-digit', minute: '2-digit' })
 
 /** What a counter's number is: as read, or worked out since. */
-function counterTitle(r: Refill, c: CounterNow, at: number): string {
-  const lines = [t('{n} at login, {when}', { n: c.read, when: ago(at) })]
+function counterTitle(r: Refill, c: CounterNow): string {
+  const lines = [t(c.changed ? '{n} after your last run, {when}' : '{n} at login, {when}', { n: c.read, when: ago(c.readAt) })]
   if (c.now !== c.read) lines.push(t('+{per} {when} since', { per: r.per, when: t(r.when) }))
   lines.push(c.now >= c.max ? t('Full') : t('Full at {when}', { when: stamp(c.fullAt) }))
   return lines.join('\n')
@@ -227,7 +227,7 @@ function corridorTitle(list: CorridorState[]): string {
               </td>
               <template v-if="r.c.counters">
                 <td class="px-3 py-2">
-                  <div v-if="r.energy" :title="counterTitle(ENERGY, r.energy, r.c.counters.at)">
+                  <div v-if="r.energy" :title="counterTitle(ENERGY, r.energy)">
                     <div class="mb-1 flex items-baseline gap-1.5 tabular-nums">
                       <span class="font-semibold">{{ r.energy.now }}</span>
                       <span v-if="r.energy.extra" class="font-semibold" :style="{ color: CHARGED }">(+{{ r.energy.extra }})</span>
@@ -245,7 +245,7 @@ function corridorTitle(list: CorridorState[]): string {
                   <span v-else class="text-darkest">–</span>
                 </td>
                 <td v-for="[def, c] in ([[NIGHTMARE, r.nightmare], [ASCENSION, r.ascension]] as const)" :key="def.id" class="px-5 py-2">
-                  <div v-if="c" :title="counterTitle(def, c, r.c.counters.at)">
+                  <div v-if="c" :title="counterTitle(def, c)">
                     <div class="mb-1 flex items-baseline gap-1 tabular-nums">
                       <span class="font-semibold">{{ c.now }}</span>
                       <span class="text-xs text-darkest">/ {{ c.max }}</span>

@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { broadcast } from './broadcast.ts'
 import { log, tracker } from './tracker.ts'
-import { ABYSS_TIME, characterId, corridorReset, CORRIDORS, ncsoftRegion, portraitUrl, type Characters, type TrackedCharacter } from '../shared/characters.ts'
+import { ABYSS_TIME, ASCENSION, characterId, corridorReset, CORRIDORS, ncsoftRegion, NIGHTMARE, portraitUrl, type Characters, type TrackedCharacter } from '../shared/characters.ts'
 
 /** How long NCSoft's combat power and portrait are kept before asking again. */
 const FETCH_EVERY_MS = 24 * 3_600_000
@@ -183,6 +183,8 @@ export function startCharacters(): void {
     changed()
     void fetchMissing()
   })
+  /** Runs entered, kept up to date as they happen (energy changes with every fight: it waits for the next login). */
+  const RUNS = new Set([NIGHTMARE.id, ASCENSION.id])
   // The login's counters.
   tracker.onEvent('counters', (ev) => {
     const server = ev['server'] as number | null
@@ -193,7 +195,8 @@ export function startCharacters(): void {
     log(`characters: ${c.name}'s counters, energy ${JSON.stringify(c.counters.values['60000001'] ?? null)}`)
     changed()
   })
-  // A counter changed while playing: the corridors given or done, and your Abyss time ticking.
+  // A counter changed while playing: a Nightmare or Ascension Trial entered, the corridors given or
+  // done, and your Abyss time ticking.
   tracker.onEvent('counter', (ev) => {
     const server = ev['server'] as number | null
     if (server === null) return
@@ -206,6 +209,16 @@ export function startCharacters(): void {
       const fresh = (c.corridors.abyssAt ?? 0) < corridorReset(at)
       c.corridors.abyssAt = Math.max(c.corridors.abyssAt ?? 0, at)
       if (fresh) changed()
+      return
+    }
+    if (RUNS.has(id)) {
+      // Only newer news than what is kept (the login's counters can be told after changes).
+      if (!c.counters || at < (c.counters.changedAt?.[id] ?? c.counters.at)) return
+      const values = ev['values'] as number[]
+      c.counters.values[id] = values
+      c.counters.changedAt = { ...c.counters.changedAt, [id]: at }
+      log(`characters: ${c.name}'s ${id === NIGHTMARE.id ? 'Nightmare' : 'Ascension Trial'} now ${JSON.stringify(values)}`)
+      changed()
       return
     }
     if (corridorSeen(c, id, (ev['values'] as number[])[0] ?? 0, at)) changed()
