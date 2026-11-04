@@ -21,6 +21,8 @@ const api = bridge()
 const g = computed(() => store.guildEvents)
 const cfg = computed(() => store.settings.guildEvents)
 const setCfg = (patch: Partial<typeof cfg.value>): void => void store.set('guildEvents', { ...cfg.value, ...patch })
+/** The settings, folded away until asked for. */
+const showSettings = ref(false)
 
 const now = ref(Date.now())
 const ticker = setInterval(() => (now.value = Date.now()), 30_000)
@@ -84,11 +86,15 @@ const n = (v: number | null): string => (v === null ? '—' : v.toLocaleString(l
 
 <template>
   <div>
-    <PageHeader title="Guild Events" about="The guild's events that ask who is coming, from the Lokthar site. Answer here or from the popup over the game; open an event to see who comes.">
+    <PageHeader title="Guild Events">
       <Button v-if="cfg.enabled" size="sm" :title="t('Ask the site again now')" @click="api.invoke('guildEvents:refresh')">{{ t('Refresh') }}</Button>
     </PageHeader>
 
-    <Section title="Settings">
+    <button type="button" :class="['flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-darker hover:text-default', showSettings ? 'mb-2' : 'mb-5']" @click="showSettings = !showSettings">
+      <svg viewBox="0 0 16 16" :class="['size-3.5 transition-transform', showSettings && 'rotate-90']" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5" /></svg>
+      {{ t('Settings') }}
+    </button>
+    <Section v-if="showSettings">
       <SettingRow label="Guild events" hint="Asks the Lokthar site for the events, sending your characters' names and servers so it knows who you are.">
         <Toggle :model-value="cfg.enabled" @update:model-value="setCfg({ enabled: $event })" />
       </SettingRow>

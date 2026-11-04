@@ -1006,7 +1006,6 @@ export const ES: Record<string, string> = {
   'Responses close in {n} day.': 'Las respuestas cierran en {n} día.',
   'Responses close in {n} days.': 'Las respuestas cierran en {n} días.',
   'Sign up': 'Voy',
-  'The guild\'s events that ask who is coming, from the Lokthar site. Answer here or from the popup over the game; open an event to see who comes.': 'Los eventos de la guild que preguntan quién viene, del sitio de Lokthar. Respondé acá o desde el aviso sobre el juego; abrí un evento para ver quién viene.',
   'Your answer': 'Tu respuesta',
   'Signed up': 'Anotado',
   'No answer yet': 'Sin responder',
