@@ -4,7 +4,7 @@
 // more than 2 spawn close one after another (or as many alive at once as set), and stays while any is left: a boss seen killed (in
 // view, or listed dead again by the map) is struck out a moment, then fades and the list moves up.
 // Moved by its header; its corner makes it bigger or smaller, text and all; minimized it is its
-// header with the next boss; its X hides it until the next run. While the dashboard is up with no
+// header with the next boss; its X hides it until the next run. Low priority bosses are in grey. While the dashboard is up with no
 // run on, it shows a sample to place it by. Nothing to show measures 0, and main keeps it hidden.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CloseButton from '@/components/CloseButton.vue'
@@ -31,13 +31,13 @@ const ticker = setInterval(() => (now.value = Date.now()), 1000)
 const rows = computed(() => runRows(store.fieldBosses, now.value, cfg.value.windowMinutes * 60_000))
 
 /** A run worth showing: a cluster coming, or as many alive as set. */
-const isRun = (list: RunRow[]): boolean => clustered(list) || (cfg.value.aliveMin > 0 && aliveCount(list, cfg.value.ignoreSmall) >= cfg.value.aliveMin)
+const isRun = (list: RunRow[]): boolean => clustered(list) || (cfg.value.aliveMin > 0 && aliveCount(list, cfg.value.ignoreLow ? cfg.value.lowPriority : []) >= cfg.value.aliveMin)
 /** Up once a run is on, until nothing is left on the list. */
 const active = ref(false)
 /** The bosses on the list when its X was pressed: a run of others brings it back. */
 const dismissed = ref(new Set<number>())
 watch(
-  [rows, () => cfg.value.aliveMin, () => cfg.value.ignoreSmall],
+  [rows, () => cfg.value.aliveMin, () => cfg.value.ignoreLow, () => cfg.value.lowPriority],
   ([list]) => {
     if (isRun(list.filter((r) => !dismissed.value.has(r.run.boss)))) {
       active.value = true
@@ -70,6 +70,7 @@ const list = computed(() => (active.value ? rows.value : preview.value ? SAMPLE.
 /** Minimized: the first not yet killed, shown in the header. */
 const next = computed(() => list.value.find((r) => r.status !== 'killed') ?? null)
 
+const isLow = (boss: number): boolean => cfg.value.lowPriority.includes(boss)
 const set = (patch: Partial<Settings['bossRuns']>): void => void store.set('bossRuns', { ...cfg.value, ...patch })
 /** Its size while the corner is dragged; the saved one otherwise. */
 const live = ref<number | null>(null)
@@ -130,9 +131,12 @@ onBeforeUnmount(() => {
           <span class="size-1.5 shrink-0 rounded-full bg-accent" />
           <span class="shrink-0 font-semibold text-default">{{ t('Boss Runs') }}</span>
           <template v-if="cfg.collapsed && next">
-            <span class="min-w-0 truncate text-[12px] text-dark">{{ next.run.short }}</span>
-            <span v-if="next.run.tp !== null" class="shrink-0 rounded bg-yellow/15 px-1 text-[11px] font-semibold tabular-nums leading-4 text-yellow">TP {{ next.run.tp }}</span>
-            <span :class="['shrink-0 text-xs font-semibold tabular-nums', next.status === 'up' ? 'text-green' : 'text-default']">{{ countdown(next.at) }}</span>
+            <span :class="['min-w-0 truncate text-[12px]', isLow(next.run.boss) ? 'text-darker' : 'text-dark']">{{ next.run.short }}</span>
+            <span
+              v-if="next.run.tp !== null"
+              :class="['shrink-0 rounded px-1 text-[11px] font-semibold tabular-nums leading-4', isLow(next.run.boss) ? 'bg-white/10 text-darker' : 'bg-yellow/15 text-yellow']"
+            >TP {{ next.run.tp }}</span>
+            <span :class="['shrink-0 text-xs font-semibold tabular-nums', isLow(next.run.boss) ? 'text-darker' : next.status === 'up' ? 'text-green' : 'text-default']">{{ countdown(next.at) }}</span>
           </template>
           <span v-else-if="preview" class="truncate text-[11px] text-darker">{{ t('drag to move') }}</span>
           <span class="flex-1" />
@@ -158,14 +162,17 @@ onBeforeUnmount(() => {
             :key="r.run.boss"
             :class="['flex w-full items-center gap-2 py-0.5 text-[13px] transition-opacity duration-500', r.status === 'killed' && 'opacity-50']"
           >
-            <img v-if="bossPortrait(r.run.boss)" :src="bossPortrait(r.run.boss)!" alt="" draggable="false" class="size-5 shrink-0 rounded-sm object-cover" />
-            <span :class="['shrink-0 font-medium text-default', r.status === 'killed' && 'line-through decoration-red decoration-2']">{{ r.run.short }}</span>
-            <span v-if="r.run.tp !== null" class="shrink-0 rounded bg-yellow/15 px-1 text-[11px] font-semibold tabular-nums leading-4 text-yellow">TP {{ r.run.tp }}</span>
+            <img v-if="bossPortrait(r.run.boss)" :src="bossPortrait(r.run.boss)!" alt="" draggable="false" :class="['size-5 shrink-0 rounded-sm object-cover', isLow(r.run.boss) && 'opacity-60 grayscale']" />
+            <span :class="['shrink-0 font-medium', isLow(r.run.boss) ? 'text-darker' : 'text-default', r.status === 'killed' && 'line-through decoration-red decoration-2']">{{ r.run.short }}</span>
+            <span
+              v-if="r.run.tp !== null"
+              :class="['shrink-0 rounded px-1 text-[11px] font-semibold tabular-nums leading-4', isLow(r.run.boss) ? 'bg-white/10 text-darker' : 'bg-yellow/15 text-yellow']"
+            >TP {{ r.run.tp }}</span>
             <span v-else-if="r.run.tpName" class="min-w-0 truncate text-[11px] text-darker">{{ r.run.tpName }}</span>
             <span v-if="r.status === 'killed'" class="ml-auto shrink-0 text-[11px] font-semibold uppercase text-red">{{ t('killed') }}</span>
             <span
               v-else
-              :class="['ml-auto shrink-0 text-xs font-semibold tabular-nums', r.status === 'up' ? 'text-green' : r.at - now < 60_000 ? 'text-yellow' : 'text-default']"
+              :class="['ml-auto shrink-0 text-xs font-semibold tabular-nums', isLow(r.run.boss) ? 'text-darker' : r.status === 'up' ? 'text-green' : r.at - now < 60_000 ? 'text-yellow' : 'text-default']"
             >{{ countdown(r.at) }}</span>
           </div>
         </TransitionGroup>

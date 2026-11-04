@@ -10,6 +10,7 @@
  *
  * The small ones: Neikel, Kutar and Kernon, never seen more than 24 minutes from respawning in the
  * owner's logs (2026-10-21 to 11-03), back every 30 minutes; every other one was seen 37 or more.
+ * They start as low priority (settings' bossRuns.lowPriority), which the player changes on the page.
  *
  * `npc` is the boss's monster code (scripts/fetch-boss-icons.mjs, data/fieldBossNpcs.json), which
  * the engine names when one dies in view (FIELD_BOSS_NPCS in engine/src/tracker/mod.rs).
@@ -24,7 +25,7 @@ export interface BossRun {
   npc: number
   tp: number | null
   tpName: string | null
-  /** A small one, back every 30 minutes, which runs often skip: it can be left out of the alive count. */
+  /** A small one, back every 30 minutes, which runs often skip: low priority unless the player says otherwise. */
   small?: boolean
 }
 
@@ -107,8 +108,11 @@ export function runRows(bosses: FieldBosses, now: number, windowMs: number): Run
   return rows.sort((a, b) => rank(a) - rank(b) || a.at - b.at)
 }
 
-/** How many on the list are alive (up, or due); the small ones left out if asked. */
-export const aliveCount = (rows: RunRow[], ignoreSmall = false): number => rows.filter((r) => r.status === 'up' && !(ignoreSmall && r.run.small)).length
+/** The bosses low priority until the player picks others: the small ones. */
+export const DEFAULT_LOW_PRIORITY: number[] = BOSS_RUNS.filter((r) => r.small).map((r) => r.boss)
+
+/** How many on the list are alive (up, or due), leaving out the ones in `ignore`. */
+export const aliveCount = (rows: RunRow[], ignore: readonly number[] = []): number => rows.filter((r) => r.status === 'up' && !ignore.includes(r.run.boss)).length
 
 /** More than 2 of them spawning one after another, each within CLUSTER_GAP_MS of the one before. */
 export function clustered(rows: RunRow[]): boolean {

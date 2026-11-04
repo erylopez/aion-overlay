@@ -3,6 +3,7 @@
  * file or a renderer bug can never store something the app then trips over.
  */
 
+import { BOSS_RUNS, DEFAULT_LOW_PRIORITY } from './bossRuns.ts'
 import type { Lang } from './i18n.ts'
 import { DUMMY_DAMAGE_GOALS, DUMMY_LIMITS, type DummyGoal } from './dummy.ts'
 import { isSound, type SoundId } from './sounds.ts'
@@ -126,9 +127,10 @@ export interface Settings {
    * Boss Runs (shared/bossRuns.ts): Verteron's field bosses about to spawn, with their Kibelisk,
    * up by itself when more than 2 spawn close together. How far ahead it looks (minutes), how
    * many it lists, minimized to its header, its size (a scale of its 260 px), how many alive at
-   * once bring it up too (0: never), and whether the small 30-minute bosses count for that.
+   * once bring it up too (0: never), the bosses of low priority (list ids), and whether those are
+   * left out of that count.
    */
-  bossRuns: { enabled: boolean; position: Point | null; opacity: number; windowMinutes: number; rows: number; collapsed: boolean; scale: number; aliveMin: number; ignoreSmall: boolean }
+  bossRuns: { enabled: boolean; position: Point | null; opacity: number; windowMinutes: number; rows: number; collapsed: boolean; scale: number; aliveMin: number; ignoreLow: boolean; lowPriority: number[] }
 
   /** The kill feed over the game: open (from the PvP page), and where (null = top right). */
   /**
@@ -304,7 +306,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   merchantWindow: null,
   detailsWindow: null,
   timerBar: { enabled: true, position: null, opacity: 0.92 },
-  bossRuns: { enabled: true, position: null, opacity: 0.85, windowMinutes: 15, rows: 5, collapsed: false, scale: 1, aliveMin: 0, ignoreSmall: true },
+  bossRuns: { enabled: true, position: null, opacity: 0.85, windowMinutes: 15, rows: 5, collapsed: false, scale: 1, aliveMin: 0, ignoreLow: true, lowPriority: DEFAULT_LOW_PRIORITY },
   killFeed: { open: false, position: null, opacity: 0.9, collapsed: false, target: true, width: null, height: null },
   enemies: { enabled: true, position: null, opacity: 0.75, collapsed: false, mapPins: true, sound: true, pvpOnly: true, soundId: 'enemy-spotted', volume: 0.7, customName: null },
   skills: { enabled: true, position: null, rows: 6, opacity: 0.92 },
@@ -472,7 +474,8 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
         collapsed: bool(v.collapsed, false),
         scale: num(v.scale, BOSSRUNS_SCALE[0], BOSSRUNS_SCALE[1], d.bossRuns.scale),
         aliveMin: Math.round(num(v.aliveMin, 0, 10, d.bossRuns.aliveMin)),
-        ignoreSmall: bool(v.ignoreSmall, d.bossRuns.ignoreSmall),
+        ignoreLow: bool(v.ignoreLow, d.bossRuns.ignoreLow),
+        lowPriority: Array.isArray(v.lowPriority) ? [...new Set(v.lowPriority.filter((id) => BOSS_RUNS.some((r) => r.boss === id)))] : [...d.bossRuns.lowPriority],
       } as Settings[K]
     }
     case 'enemies': {
