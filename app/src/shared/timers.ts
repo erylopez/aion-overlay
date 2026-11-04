@@ -67,6 +67,11 @@ export interface FieldBossState {
   /** Your own map, or other players' (the shared timers, confirmed by several of them), or its
    *  schedule (a boss the list gives no time for: Watcher Kaira). */
   source?: 'map' | 'shared' | 'schedule'
+  /**
+   * When it was seen killed: it died in view (its respawn not known until the map says: `at` 0),
+   * or the map listed it dead again after it had spawned.
+   */
+  killedAt?: number
 }
 /** By the list's own boss id (101021 = Eternal Gartua). */
 export type FieldBosses = Record<number, FieldBossState>
@@ -108,9 +113,10 @@ export const defaultShown = (def: TimerDef): boolean => def.schedule.kind !== 'b
 /**
  * The field bosses by their id in the map's list (`01 91`). Verteron's named 2026-10-13 from
  * fieldboss_list.pcap, the up ones by their position (each a questlog.gg marker) and the dead ones
- * by their times against the in-game list; the Abyss's below. Other zones' ids are not known yet.
+ * by their times against the in-game list; Altgard's and the Abyss's below. Other zones' ids are
+ * not known yet.
  */
-export type BossZone = 'verteron' | 'abyss'
+export type BossZone = 'verteron' | 'altgard' | 'abyss'
 export const FIELD_BOSSES: { boss: number; name: string; zone: BossZone }[] = [
   { boss: 101001, name: 'Neikel of the East', zone: 'verteron' },
   { boss: 101002, name: 'Rotten Kutar', zone: 'verteron' },
@@ -136,6 +142,34 @@ export const FIELD_BOSSES: { boss: number; name: string; zone: BossZone }[] = [
   { boss: 101022, name: 'Silent Dartan', zone: 'verteron' },
   { boss: 101023, name: 'Soul Ruler Kashapa', zone: 'verteron' },
   { boss: 101024, name: 'High Commander Lagta', zone: 'verteron' },
+  // Altgard's, the Asmodians' (world 1110, read from its map: an Elyos sees it on the other
+  // faction's map too). Named 2026-11-03 from the owner's packet logs: the list is in the order of
+  // questlog.gg's monster ids, as Verteron's is, and its four bosses up then (111001, 111002, 111006,
+  // 111009) were each at its marker (the game's y is questlog's negated).
+  { boss: 111001, name: 'Melted Danar', zone: 'altgard' },
+  { boss: 111002, name: 'Black Warrior Aed', zone: 'altgard' },
+  { boss: 111003, name: 'Faithful Rajit', zone: 'altgard' },
+  { boss: 111004, name: 'Berserker Vargor', zone: 'altgard' },
+  { boss: 111005, name: 'Predator Garsan', zone: 'altgard' },
+  { boss: 111006, name: 'Blood Warrior Lannar', zone: 'altgard' },
+  { boss: 111007, name: 'Deceiver Trid', zone: 'altgard' },
+  { boss: 111008, name: 'Blue Wave Kelpina', zone: 'altgard' },
+  { boss: 111009, name: 'High Overseer Nutah', zone: 'altgard' },
+  { boss: 111010, name: 'Advisor Resana', zone: 'altgard' },
+  { boss: 111011, name: 'Special Operations Leader Linx', zone: 'altgard' },
+  { boss: 111012, name: 'Desecrator Newbold', zone: 'altgard' },
+  { boss: 111013, name: 'Specter Archon Axios', zone: 'altgard' },
+  { boss: 111014, name: 'Addicted Hardirun', zone: 'altgard' },
+  { boss: 111015, name: 'Executioner Barthien', zone: 'altgard' },
+  { boss: 111016, name: 'Drakan Battalion Weapon Guruta', zone: 'altgard' },
+  { boss: 111017, name: 'Veteran Shujakan', zone: 'altgard' },
+  { boss: 111018, name: 'Visionary Karuka', zone: 'altgard' },
+  { boss: 111019, name: 'Dark Shadow Vishwada', zone: 'altgard' },
+  { boss: 111020, name: 'Sharp Shylak', zone: 'altgard' },
+  { boss: 111021, name: 'Immortal Gartua', zone: 'altgard' },
+  { boss: 111022, name: 'High Commander Lagta', zone: 'altgard' },
+  { boss: 111023, name: 'Soul Ruler Kashapa', zone: 'altgard' },
+  { boss: 111024, name: 'Silent Dartan', zone: 'altgard' },
   // The Abyss's, in its list (world 20, sent as you enter the Abyss): named 2026-11-03 by their
   // times against the in-game list (Argo, Kaira, the Nahmas, the Executors). Which Nahma is which,
   // and the Executors' order, are guessed from the game listing them in id order.
@@ -276,7 +310,13 @@ for (const b of FIELD_BOSSES) {
   TIMERS.push({
     id: `fb-${b.boss}`,
     name: b.name,
-    detail: ON_SCHEDULE[b.boss] ? 'Abyss boss on a fixed schedule, every 3 hours' : b.zone === 'abyss' ? 'Abyss boss: updated each time you enter the Abyss' : 'Verteron field boss: open the map to update',
+    detail: ON_SCHEDULE[b.boss]
+      ? 'Abyss boss on a fixed schedule, every 3 hours'
+      : b.zone === 'abyss'
+        ? 'Abyss boss: updated each time you enter the Abyss'
+        : b.zone === 'altgard'
+          ? 'Asmodian field boss in Altgard: open its map to update'
+          : 'Verteron field boss: open the map to update',
     schedule: { kind: 'boss', boss: b.boss },
     lead: 5,
     confirmed: true,

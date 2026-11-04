@@ -14,7 +14,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { broadcast } from './broadcast.ts'
 import { log } from './tracker.ts'
-import type { FieldBosses } from '../shared/timers.ts'
+import { bossOfNpc } from '../shared/bossRuns.ts'
+import type { FieldBosses, FieldBossState } from '../shared/timers.ts'
 
 export interface MapBoss {
   id: number
@@ -60,7 +61,7 @@ export const fieldBosses = {
   /** The last zone the map listed bosses in, and every boss as the map last said (Sync now). */
   lastMap(): { server: number | null; world: number | null; list: MapBoss[] } {
     const list = Object.entries(bosses)
-      .filter(([, b]) => b.source === 'map')
+      .filter(([, b]) => b.source === 'map' && (b.up || b.at > 0))
       .map(([id, b]) => ({ id: Number(id), up: b.up, at: b.at }))
     return { server, world, list }
   },
@@ -84,7 +85,7 @@ export const fieldBosses = {
     const seen = Date.now()
     // Dead with no time (the Abyss's list has one): nothing to tell of it.
     const list = all.filter((b) => b.up || b.at > 0)
-    bosses = { ...bosses, ...Object.fromEntries(list.map((b) => [b.id, { up: b.up, at: b.at, seen, source: 'map' as const }])) }
+    bosses = { ...bosses, ...Object.fromEntries(list.map((b) => [b.id, mapState(bosses[b.id], b, seen)])) }
     const g = bosses[101021]
     log(
       `field bosses: zone ${zone}, ${list.filter((b) => b.up).length}/${list.length} up` +
@@ -95,6 +96,29 @@ export const fieldBosses = {
     world = zone
     for (const fn of mapListeners) fn(server, zone, list)
   },
+}
+
+/**
+ * A boss as the map lists it now. Listed dead with a respawn to come after it had spawned (up, or
+ * its respawn passed): killed in between, told as of now unless a kill in view said already.
+ */
+function mapState(was: FieldBossState | undefined, b: MapBoss, seen: number): FieldBossState {
+  const state: FieldBossState = { up: b.up, at: b.at, seen, source: 'map' }
+  if (b.up) return state
+  const spawned = !!was && (was.up || (was.at > 0 && was.at <= seen))
+  const killedAt = spawned && b.at > seen ? seen : was?.killedAt
+  return killedAt ? { ...state, killedAt } : state
+}
+
+/** A field boss died in view (the engine's `bossKilled`, by its monster code). */
+export function bossKilled(npc: number): void {
+  const id = bossOfNpc(npc)
+  if (id === null) return
+  const now = Date.now()
+  // Its respawn is the map's to say: none until then.
+  bosses = { ...bosses, [id]: { up: false, at: 0, seen: now, source: 'map', killedAt: now } }
+  log(`field bosses: ${id} killed in view`)
+  changed()
 }
 
 export function startFieldBosses(): void {

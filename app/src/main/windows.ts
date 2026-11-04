@@ -16,6 +16,8 @@
  *   timerbar  #/timerbar  the timers with an alert on, as a bar of countdowns: open while the game
  *                         is, sized to what it shows (hidden with nothing within 13 hours)
  *   killfeed  #/killfeed  player kills around you, as they happen: opened from the PvP page
+ *   bossruns  #/bossruns  Verteron's field bosses about to spawn, with their Kibelisk: up by itself
+ *                         when several spawn close together; click-through
  *   meter     #/meter     the DPS meter: open while the game is (and the meter is on), movable by
  *                         its header, sized to its rows
  *
@@ -730,7 +732,24 @@ export const createPacketsHud = packetsOverlay.create
 export const closePacketsHud = packetsOverlay.close
 export const resizePacketsHud = packetsOverlay.resize
 
-const MEASURED = [skillsOverlay, miniMapOverlay, buffsOverlay, ccOverlay, enemiesOverlay, trainingOverlay, packetsOverlay]
+/** Boss Runs: right of centre, a third of the way down. */
+const bossRunsOverlay = measuredOverlay({
+  route: 'bossruns',
+  enabled: () => settings.get('bossRuns').enabled,
+  saved: () => settings.get('bossRuns').position,
+  fallback: () => {
+    const area = screen.getPrimaryDisplay().workArea
+    return { x: Math.round(area.x + area.width * 0.62), y: Math.round(area.y + area.height * 0.3) }
+  },
+  save: (position) => settings.set('bossRuns', { ...settings.get('bossRuns'), position }),
+  clickThrough: true,
+})
+export const createBossRuns = bossRunsOverlay.create
+export const resizeBossRuns = bossRunsOverlay.resize
+export const moveBossRuns = bossRunsOverlay.move
+export const bossRunsDragEnded = bossRunsOverlay.dragEnded
+
+const MEASURED = [skillsOverlay, miniMapOverlay, buffsOverlay, ccOverlay, enemiesOverlay, trainingOverlay, packetsOverlay, bossRunsOverlay]
 /** The measured overlays that are open. */
 const measuredWins = (): BrowserWindow[] => MEASURED.map((m) => m.win()).filter((w): w is BrowserWindow => w !== null)
 
@@ -1009,6 +1028,8 @@ export function applyWindowSettings(): void {
   else if (alive(bubble)) createCc()
   if (!settings.get('enemies').enabled) enemiesOverlay.close()
   else if (alive(bubble)) createEnemies()
+  if (!settings.get('bossRuns').enabled) bossRunsOverlay.close()
+  else if (alive(bubble)) createBossRuns()
   if (!settings.get('dummy').overlay) trainingOverlay.close()
   else if (alive(bubble)) createTraining()
   // Turned on: with the other overlays, while they are up (the bubble is, awake).
@@ -1070,7 +1091,7 @@ export function rebuildWindow(win: BrowserWindow): string | null {
     showMerchant()
     return 'merchant'
   }
-  for (const [m, route] of [[skillsOverlay, 'skills'], [miniMapOverlay, 'minimap'], [buffsOverlay, 'buffs'], [ccOverlay, 'cc'], [enemiesOverlay, 'enemies'], [trainingOverlay, 'training'], [packetsOverlay, 'packets']] as const) {
+  for (const [m, route] of [[skillsOverlay, 'skills'], [miniMapOverlay, 'minimap'], [buffsOverlay, 'buffs'], [ccOverlay, 'cc'], [enemiesOverlay, 'enemies'], [trainingOverlay, 'training'], [packetsOverlay, 'packets'], [bossRunsOverlay, 'bossruns']] as const) {
     if (win !== m.win()) continue
     m.close()
     m.create()

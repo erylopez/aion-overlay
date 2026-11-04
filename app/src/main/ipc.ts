@@ -14,8 +14,11 @@ import { sounds } from './sounds.ts'
 import { timers } from './timers.ts'
 import { logPath, tracker } from './tracker.ts'
 import {
+  bossRunsDragEnded,
   bubbleDragEnded,
   buffsDragEnded,
+  moveBossRuns,
+  resizeBossRuns,
   ccDragEnded,
   enemiesDragEnded,
   moveTraining,
@@ -249,6 +252,13 @@ export function registerIpc(): void {
     if (isPoint(to)) moveEnemies(to)
   })
   handle('enemies:dragEnd', () => enemiesDragEnded())
+  handle('bossruns:moveTo', (to) => {
+    if (isPoint(to)) moveBossRuns(to)
+  })
+  handle('bossruns:dragEnd', () => bossRunsDragEnded())
+  handle('bossruns:resize', (size) => {
+    if (isPoint({ x: size?.width, y: size?.height })) resizeBossRuns(size)
+  })
   handle('enemies:resize', (size) => {
     if (isPoint({ x: size?.width, y: size?.height })) resizeEnemies(size)
   })

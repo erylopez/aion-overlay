@@ -85,6 +85,7 @@ const overlays = computed<Overlay[]>(() => {
     { id: 'cc', name: t('CC / Debuffs'), about: t('When you are stunned, rooted, feared…'), page: 'buffs', on: s.buffs.cc, set: flip('buffs', 'cc') },
     { id: 'training', name: t('Training'), about: t('Training dummy runs: clock and DPS'), page: 'training', on: s.dummy.overlay, set: flip('dummy', 'overlay') },
     { id: 'minimap', name: t('Map'), about: t('Your zone, tracked pets, cubes'), page: 'map', on: s.minimap.enabled, set: flip('minimap', 'enabled') },
+    { id: 'bossRuns', name: t('Boss Runs'), about: t('Field bosses about to spawn, with their TP'), page: 'bosses', on: s.bossRuns.enabled, set: flip('bossRuns', 'enabled') },
     { id: 'timerBar', name: t('Countdown bar'), about: t('Events with an alert on'), page: 'events', on: s.timerBar.enabled, set: flip('timerBar', 'enabled') },
     {
       id: 'killFeed',
@@ -119,7 +120,7 @@ const nextEvent = computed(() => {
   const on = TIMERS.filter((d) => d.schedule.kind !== 'boss' && t.enabled[d.id] && t.shown[d.id])
   return on.map((def) => ({ def, at: timerNext(def, now.value) })).sort((a, b) => a.at - b.at)[0] ?? null
 })
-const bossesUp = computed(() => Object.entries(store.fieldBosses).filter(([id, b]) => b.up && bossZone(Number(id)) !== 'abyss').length)
+const bossesUp = computed(() => Object.entries(store.fieldBosses).filter(([id, b]) => b.up && bossZone(Number(id)) === 'verteron').length)
 const pvp = computed(() => ({ kills: store.pvp.filter((k) => k.mine).length, deaths: store.pvp.filter((k) => k.died).length }))
 const myDps = computed(() => meter.value.rows.find((r) => r.you) ?? null)
 

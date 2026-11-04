@@ -120,6 +120,13 @@ export interface Settings {
   /** The timers' countdown bar over the game: on, where (null = top centre), how opaque. */
   timerBar: { enabled: boolean; position: Point | null; opacity: number }
 
+  /**
+   * Boss Runs (shared/bossRuns.ts): Verteron's field bosses about to spawn, with their Kibelisk,
+   * up by itself when more than 2 spawn close together. How far ahead it looks (minutes), how
+   * many it lists.
+   */
+  bossRuns: { enabled: boolean; position: Point | null; opacity: number; windowMinutes: number; rows: number }
+
   /** The kill feed over the game: open (from the PvP page), and where (null = top right). */
   /**
    * The kill feed overlay; `opacity` is its background's (0: none, the text glows on the game); `target`: your target under it;
@@ -294,6 +301,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   merchantWindow: null,
   detailsWindow: null,
   timerBar: { enabled: true, position: null, opacity: 0.92 },
+  bossRuns: { enabled: true, position: null, opacity: 0.85, windowMinutes: 15, rows: 5 },
   killFeed: { open: false, position: null, opacity: 0.9, collapsed: false, target: true, width: null, height: null },
   enemies: { enabled: true, position: null, opacity: 0.75, collapsed: false, mapPins: true, sound: true, pvpOnly: true, soundId: 'enemy-spotted', volume: 0.7, customName: null },
   skills: { enabled: true, position: null, rows: 6, opacity: 0.92 },
@@ -448,6 +456,16 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
         enabled: bool(v.enabled, d.timerBar.enabled),
         position: point(v.position),
         opacity: num(v.opacity, 0.3, 1, d.timerBar.opacity),
+      } as Settings[K]
+    }
+    case 'bossRuns': {
+      const v = (value ?? {}) as Partial<Settings['bossRuns']>
+      return {
+        enabled: bool(v.enabled, d.bossRuns.enabled),
+        position: point(v.position),
+        opacity: num(v.opacity, 0, 1, d.bossRuns.opacity),
+        windowMinutes: Math.round(num(v.windowMinutes, 5, 60, d.bossRuns.windowMinutes)),
+        rows: Math.round(num(v.rows, 1, 10, d.bossRuns.rows)),
       } as Settings[K]
     }
     case 'enemies': {

@@ -21,7 +21,7 @@ import { DISPLAY_NAME } from '../shared/app.ts'
 import { broadcast } from './broadcast.ts'
 import { settings } from './settings.ts'
 import { kinaBalance, kinaRebase, NO_KINA, type KinaSession } from '../shared/kina.ts'
-import { fieldBosses } from './fieldBosses.ts'
+import { bossKilled, fieldBosses } from './fieldBosses.ts'
 import type { FieldBosses } from '../shared/timers.ts'
 import { pvpLog } from './pvpLog.ts'
 import { serverFaction, serverRegion } from '../shared/servers.ts'
@@ -383,6 +383,9 @@ function handleLine(line: string): void {
     }
     case 'fieldBosses':
       fieldBosses.fromMap(ev['world'] as number, ev['bosses'] as { id: number; up: boolean; at: number }[])
+      break
+    case 'bossKilled':
+      bossKilled(ev['npc'] as number)
       break
     case 'kina':
       setKina(kinaBalance(kina, ev['balance'] as number, Date.now()))

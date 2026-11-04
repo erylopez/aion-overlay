@@ -22,6 +22,7 @@
 //!   {"type": "kina", "balance": 3769926}
 //!   {"type": "shop", "tab": 104, "nextAt": ms | null, "items": [{"slot", "item", "quantity", "currency", "base", "price"}]}
 //!   {"type": "fieldBosses", "world": 1010, "bosses": [{"id": 101021, "up": false, "at": ms}]}
+//!   {"type": "bossKilled", "npc": 2100003}   a field boss died in view (its monster code)
 //!   {"type": "pvpKill", "killer": {"name", "server", "guild"}, "victim": {...} | null, "mine", "died", "legion"}
 //!   {"type": "snapshot", "pets": [...]}               answer to "snapshot" (then a nearby)
 //!   {"type": "nearby", "world": 1010, "position": [x, y] | null, "monsters": [{"npc", "count"}]}
