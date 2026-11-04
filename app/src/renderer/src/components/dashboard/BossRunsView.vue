@@ -63,7 +63,7 @@ const soon = (at: number): boolean => at - now.value <= runs.value.windowMinutes
         <SettingRow v-if="runs.aliveMin" label="Ignore low priority bosses" hint="The ones marked low priority in the table below don't count toward the bosses alive.">
           <Toggle :model-value="runs.ignoreLow" @update:model-value="setRuns({ ignoreLow: $event })" />
         </SettingRow>
-        <SettingRow label="Bosses" hint="At most this many at once.">
+        <SettingRow label="Bosses" hint="This many of normal priority; the low priority ones in between are shown on top of them.">
           <SelectBox size="sm" :model-value="runs.rows" :options="ROW_CHOICES.map((n) => ({ id: n, label: String(n) }))" @update:model-value="setRuns({ rows: $event })" />
         </SettingRow>
         <SettingRow label="Opacity">

@@ -66,11 +66,23 @@ const SAMPLE = computed<RunRow[]>(() => {
 })
 /** Nothing coming while the dashboard is up: a sample to place it by. */
 const preview = computed(() => !active.value && store.panelVisible)
-const list = computed(() => (active.value ? rows.value : preview.value ? SAMPLE.value : []).slice(0, cfg.value.rows))
+const isLow = (boss: number): boolean => cfg.value.lowPriority.includes(boss)
+const list = computed(() => fit(active.value ? rows.value : preview.value ? SAMPLE.value : []))
+/**
+ * Up to the setting's count of bosses of normal priority: the low priority ones (and the ones just
+ * killed) in between don't take their place, so the list grows by them; never shorter than the count.
+ */
+function fit(all: RunRow[]): RunRow[] {
+  let normal = 0
+  return all.filter((r, i) => {
+    if (normal >= cfg.value.rows && i >= cfg.value.rows) return false
+    if (r.status !== 'killed' && !isLow(r.run.boss)) normal++
+    return true
+  })
+}
 /** Minimized: the first not yet killed, shown in the header. */
 const next = computed(() => list.value.find((r) => r.status !== 'killed') ?? null)
 
-const isLow = (boss: number): boolean => cfg.value.lowPriority.includes(boss)
 const set = (patch: Partial<Settings['bossRuns']>): void => void store.set('bossRuns', { ...cfg.value, ...patch })
 /** Its size while the corner is dragged; the saved one otherwise. */
 const live = ref<number | null>(null)

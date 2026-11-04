@@ -687,7 +687,7 @@ export const ES: Record<string, string> = {
   'Stays while any boss of the run is left. A boss killed near you, or listed dead again by the map, is struck out, then fades out. Move it by its header, size it by its corner; its X hides it until the next run.': 'Queda mientras quede algún boss de la run. Un boss que matan cerca tuyo, o que el mapa vuelve a dar por muerto, se tacha y después se desvanece. Movela desde su encabezado y cambiale el tamaño desde la esquina; su X la oculta hasta la próxima run.',
   'Hide until the next run (turn it off in the app)': 'Ocultar hasta la próxima run (se apaga desde la app)',
   'Bosses spawning within this time are listed.': 'Lista los bosses que spawnean dentro de este tiempo.',
-  'At most this many at once.': 'Como máximo esta cantidad a la vez.',
+  'This many of normal priority; the low priority ones in between are shown on top of them.': 'Esta cantidad de prioridad normal; los de prioridad baja que haya en el medio se muestran además.',
   'Over the game': 'Sobre el juego',
   'Next to spawn': 'Próximos en spawnear',
   'When alive': 'Con vivos',
