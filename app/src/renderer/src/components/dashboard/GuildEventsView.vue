@@ -12,7 +12,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import Section from '@/components/ui/Section.vue'
 import { bridge } from '@/lib/bridge.ts'
 import { closesIn, RSVP_CLASS, RSVP_LABEL } from '@/lib/guildEvents.ts'
-import { loc, t } from '@/lib/i18n.ts'
+import { loc, plural, t } from '@/lib/i18n.ts'
 import { useApp } from '@/stores/app.ts'
 import { needsAnswer, RSVPS, type GuildEvent, type GuildEventDetail, type Rsvp } from '@shared/guildEvents.ts'
 
@@ -215,7 +215,7 @@ const n = (v: number | null): string => (v === null ? '—' : v.toLocaleString(l
                     </span>
                     <span class="mt-0.5 block font-semibold text-default">{{ e.name }}</span>
                     <span class="block text-xs text-darker">
-                      {{ e.activityLabel }} · {{ t('{n} going', { n: e.counts.going }) }}<template v-if="e.counts.maybe"> · {{ t('{n} maybe', { n: e.counts.maybe }) }}</template>
+                      {{ e.activityLabel }} · {{ plural(e.counts.going, '1 going', '{n} going') }}<template v-if="e.counts.maybe"> · {{ t('{n} maybe', { n: e.counts.maybe }) }}</template>
                       <template v-if="needsAnswer(e, now)"> · {{ closesIn(e.closesAt, now) }}</template>
                     </span>
                   </span>

@@ -6,7 +6,7 @@
 // measures 0, and main keeps the window hidden.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { bridge } from '@/lib/bridge.ts'
-import { loc, t } from '@/lib/i18n.ts'
+import { loc, plural, t } from '@/lib/i18n.ts'
 import { useApp } from '@/stores/app.ts'
 import { needsAnswer, toPopUp, type Rsvp } from '@shared/guildEvents.ts'
 import { closesIn } from '@/lib/guildEvents.ts'
@@ -87,7 +87,7 @@ onBeforeUnmount(() => {
             </p>
             <p v-if="store.guildEvents.member" class="mt-1.5 text-xs text-darker">
               {{ [store.guildEvents.member.name, store.guildEvents.member.roster].filter(Boolean).join(' · ') }}
-              <span v-if="event.counts.going" class="text-darkest"> · {{ t('{n} going', { n: event.counts.going }) }}</span>
+              <span v-if="event.counts.going" class="text-darkest"> · {{ plural(event.counts.going, '1 going', '{n} going') }}</span>
             </p>
             <div class="mt-3 flex items-center gap-2">
               <button type="button" :disabled="busy" class="rounded-md bg-accent px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-60" @click="answer('going')">
