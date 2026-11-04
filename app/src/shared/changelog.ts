@@ -17,7 +17,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'The timer bar names a timer the moment you hover its icon, with the time it starts.',
       'Watcher Kaira has its time on the Abyss tab (the game sends none: it follows its schedule, every 3 hours), and the Kaira alert now matches the game\'s countdown. Guardian Lord Nahma\'s alert takes the game\'s own time once you enter the Abyss, and is at 21:10, as the game has it. The South America region is confirmed (UTC-3).',
       'The Lokthar sync sends the Abyss\'s bosses too, so lokthar.com follows Argo, the Spirit King from the game (it respawns 12 hours after it dies).',
-      'The Field Bosses page has a Boss Runs list: Verteron\'s bosses about to spawn, in order, each with its closest Kibelisk as chat calls it (Dartan, TP 33). It comes up over the game by itself when more than 2 spawn within 10 minutes of each other; a boss killed near you is struck out and fades away. How far ahead it looks and how many it lists are set there.',
+      'New Boss Runs page: Verteron\'s bosses in the order they spawn, each with its closest Kibelisk as chat calls it (Dartan, TP 33), and a list over the game that comes up by itself when more than 2 spawn within 10 minutes of each other; a boss killed near you is struck out and fades away. How far ahead it looks and how many it lists are set there.',
       'The Field Bosses page has an Asmodian bosses tab: Altgard\'s 24 field bosses, with their respawns and alerts, updated when you open Altgard\'s map in game (an Elyos can too).',
     ],
   },

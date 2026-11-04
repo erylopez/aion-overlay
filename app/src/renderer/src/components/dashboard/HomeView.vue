@@ -85,7 +85,7 @@ const overlays = computed<Overlay[]>(() => {
     { id: 'cc', name: t('CC / Debuffs'), about: t('When you are stunned, rooted, feared…'), page: 'buffs', on: s.buffs.cc, set: flip('buffs', 'cc') },
     { id: 'training', name: t('Training'), about: t('Training dummy runs: clock and DPS'), page: 'training', on: s.dummy.overlay, set: flip('dummy', 'overlay') },
     { id: 'minimap', name: t('Map'), about: t('Your zone, tracked pets, cubes'), page: 'map', on: s.minimap.enabled, set: flip('minimap', 'enabled') },
-    { id: 'bossRuns', name: t('Boss Runs'), about: t('Field bosses about to spawn, with their TP'), page: 'bosses', on: s.bossRuns.enabled, set: flip('bossRuns', 'enabled') },
+    { id: 'bossRuns', name: t('Boss Runs'), about: t('Field bosses about to spawn, with their TP'), page: 'bossRuns', on: s.bossRuns.enabled, set: flip('bossRuns', 'enabled') },
     { id: 'timerBar', name: t('Countdown bar'), about: t('Events with an alert on'), page: 'events', on: s.timerBar.enabled, set: flip('timerBar', 'enabled') },
     {
       id: 'killFeed',

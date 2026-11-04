@@ -2,21 +2,18 @@
 // Field Bosses: each one's state as your map last listed it (alive, or how long until it
 // respawns), when that was, and its alert. The list comes from the game when you open the map; the
 // Lokthar sync can fill in what others' maps saw. Verteron's bosses, Altgard's (the Asmodians', from
-// its map) and the Abyss's (read as you enter the Abyss, by any of your characters) are known so far. Below, the Boss Runs list's
-// settings (pages/BossRunsPage.vue): Verteron's bosses about to spawn, with their Kibelisk.
+// its map) and the Abyss's (read as you enter the Abyss, by any of your characters) are known so far.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Button from '@/components/Button.vue'
-import Slider from '@/components/Slider.vue'
 import Toggle from '@/components/Toggle.vue'
 import Countdown from '@/components/ui/Countdown.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
-import Section from '@/components/ui/Section.vue'
 import SelectBox from '@/components/ui/SelectBox.vue'
 import { bridge } from '@/lib/bridge.ts'
 import { loc, t } from '@/lib/i18n.ts'
 import { leadLabel, setAlert, setLead } from '@/lib/timerView.ts'
 import { useApp } from '@/stores/app.ts'
-import { BOSS_RUNS, CLUSTER_GAP_MS } from '@shared/bossRuns.ts'
+import { BOSS_RUNS } from '@shared/bossRuns.ts'
 import type { SyncResult } from '@shared/lokthar.ts'
 import { bossPortrait, bossState, FIELD_BOSSES, leadChoices, TIMERS, type BossZone, type TimerDef } from '@shared/timers.ts'
 
@@ -64,11 +61,6 @@ async function syncNow(): Promise<void> {
   syncResult.value = await bridge().invoke('lokthar:sync')
   syncing.value = false
 }
-const runs = computed(() => store.settings.bossRuns)
-const setRuns = (patch: Partial<typeof runs.value>): void => void store.set('bossRuns', { ...runs.value, ...patch })
-const pct = (v: number): string => `${Math.round(v * 100)}%`
-const WINDOWS = [5, 10, 15, 20, 30, 45, 60]
-const ROW_CHOICES = [3, 4, 5, 6, 7, 8, 10]
 /** "TP 33" as chat calls it, or the Kibelisk's name while its number is not known. */
 function tpOf(boss: number): { label: string; title: string } | null {
   const r = BOSS_RUNS.find((x) => x.boss === boss)
@@ -175,30 +167,5 @@ const on = (def: TimerDef): boolean => (cfg.value.enabled[def.id] ?? false) && (
       </table>
     </div>
 
-    <Section title="Boss Runs" class="mt-6">
-      <div class="flex flex-wrap items-center gap-x-5 gap-y-3 py-3 text-sm">
-        <label class="flex items-center gap-2" :title="t('Verteron\'s field bosses about to spawn, in order, with their Kibelisk. It comes up over the game when more than 2 spawn within {n} minutes of each other.', { n: CLUSTER_GAP_MS / 60_000 })">
-          <Toggle :model-value="runs.enabled" @update:model-value="setRuns({ enabled: $event })" />
-          <span>{{ t('Boss Runs list over the game') }}</span>
-        </label>
-        <template v-if="runs.enabled">
-          <label class="flex items-center gap-2">
-            <span class="text-xs font-medium uppercase tracking-wide text-darker">{{ t('Looks ahead') }}</span>
-            <SelectBox size="sm" :model-value="runs.windowMinutes" :options="WINDOWS.map((m) => ({ id: m, label: t('{n} min', { n: m }) }))" @update:model-value="setRuns({ windowMinutes: $event })" />
-          </label>
-          <label class="flex items-center gap-2">
-            <span class="text-xs font-medium uppercase tracking-wide text-darker">{{ t('Bosses') }}</span>
-            <SelectBox size="sm" :model-value="runs.rows" :options="ROW_CHOICES.map((n) => ({ id: n, label: String(n) }))" @update:model-value="setRuns({ rows: $event })" />
-          </label>
-          <label class="flex items-center gap-2">
-            <span class="text-xs font-medium uppercase tracking-wide text-darker">{{ t('Opacity') }}</span>
-            <Slider :model-value="runs.opacity" :min="0" :max="1" :step="0.05" :format="pct" @update:model-value="setRuns({ opacity: $event })" />
-          </label>
-        </template>
-      </div>
-      <p class="pb-3 text-xs text-darker">
-        {{ t('It comes up by itself when more than 2 bosses spawn within {n} minutes of each other, and stays while any is left. A boss killed near you, or listed dead again by the map, is struck out, then fades out. Drag it into place while this dashboard is open.', { n: CLUSTER_GAP_MS / 60_000 }) }}
-      </p>
-    </Section>
   </div>
 </template>

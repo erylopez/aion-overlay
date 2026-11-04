@@ -1,0 +1,99 @@
+<script setup lang="ts">
+// Boss Runs: Verteron's field bosses in the order they spawn, each with its Kibelisk as chat calls
+// it ("Dartan, TP 33"), and the settings of the list over the game (pages/BossRunsPage.vue). The
+// ones within the list's look-ahead are marked: those are what the list over the game shows.
+import { computed, onBeforeUnmount, ref } from 'vue'
+import SettingRow from '@/components/SettingRow.vue'
+import Slider from '@/components/Slider.vue'
+import Toggle from '@/components/Toggle.vue'
+import Countdown from '@/components/ui/Countdown.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import Section from '@/components/ui/Section.vue'
+import SelectBox from '@/components/ui/SelectBox.vue'
+import { t } from '@/lib/i18n.ts'
+import { useApp } from '@/stores/app.ts'
+import { BOSS_RUNS, CLUSTER_GAP_MS } from '@shared/bossRuns.ts'
+import { bossPortrait, bossState } from '@shared/timers.ts'
+
+const store = useApp()
+const runs = computed(() => store.settings.bossRuns)
+const setRuns = (patch: Partial<typeof runs.value>): void => void store.set('bossRuns', { ...runs.value, ...patch })
+const pct = (v: number): string => `${Math.round(v * 100)}%`
+const WINDOWS = [5, 10, 15, 20, 30, 45, 60]
+const ROW_CHOICES = [3, 4, 5, 6, 7, 8, 10]
+
+const now = ref(Date.now())
+const ticker = setInterval(() => (now.value = Date.now()), 1000)
+onBeforeUnmount(() => clearInterval(ticker))
+
+/** Alive first, then by when each spawns; the ones never seen are only counted. */
+const rows = computed(() =>
+  BOSS_RUNS.map((run) => ({ run, state: bossState(run.boss, store.fieldBosses, now.value, store.settings.timers.region), portrait: bossPortrait(run.boss) }))
+    .filter((r) => r.state && (r.state.up || r.state.at > 0))
+    .sort((a, b) => Number(b.state!.up) - Number(a.state!.up) || a.state!.at - b.state!.at),
+)
+const unseen = computed(() => BOSS_RUNS.length - rows.value.length)
+const soon = (at: number): boolean => at - now.value <= runs.value.windowMinutes * 60_000
+</script>
+
+<template>
+  <div>
+    <PageHeader
+      title="Boss Runs"
+      :about="t('Verteron\'s field bosses in the order they spawn, each with its Kibelisk. The list over the game comes up by itself when more than 2 bosses spawn within {n} minutes of each other.', { n: CLUSTER_GAP_MS / 60_000 })"
+    />
+
+    <Section title="Over the game">
+      <SettingRow label="Boss Runs list" hint="Stays while any boss of the run is left. A boss killed near you, or listed dead again by the map, is struck out, then fades out. Drag it into place while this dashboard is open.">
+        <Toggle :model-value="runs.enabled" @update:model-value="setRuns({ enabled: $event })" />
+      </SettingRow>
+      <template v-if="runs.enabled">
+        <SettingRow label="Looks ahead" hint="Bosses spawning within this time are listed.">
+          <SelectBox size="sm" :model-value="runs.windowMinutes" :options="WINDOWS.map((m) => ({ id: m, label: t('{n} min', { n: m }) }))" @update:model-value="setRuns({ windowMinutes: $event })" />
+        </SettingRow>
+        <SettingRow label="Bosses" hint="At most this many at once.">
+          <SelectBox size="sm" :model-value="runs.rows" :options="ROW_CHOICES.map((n) => ({ id: n, label: String(n) }))" @update:model-value="setRuns({ rows: $event })" />
+        </SettingRow>
+        <SettingRow label="Opacity">
+          <Slider :model-value="runs.opacity" :min="0" :max="1" :step="0.05" :format="pct" @update:model-value="setRuns({ opacity: $event })" />
+        </SettingRow>
+      </template>
+    </Section>
+
+    <Section title="Next to spawn" bare>
+      <div v-if="!rows.length" class="rounded-xl border border-card bg-card px-4 py-6 text-center text-sm text-darker">{{ t('Open the map in game to read them.') }}</div>
+      <div v-else class="overflow-hidden rounded-xl border border-card">
+        <table class="w-full text-sm">
+          <thead class="bg-card text-xs uppercase tracking-wide text-darker">
+            <tr class="border-b border-card">
+              <th class="py-2.5 pl-4 text-left font-medium">Boss</th>
+              <th class="w-20 px-3 text-left font-medium">TP</th>
+              <th class="px-3 text-left font-medium">Kibelisk</th>
+              <th class="w-40 pr-4 text-right font-medium">{{ t('Status') }}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-[color:var(--line)]">
+            <tr v-for="r in rows" :key="r.run.boss" :class="['hover:bg-card', !r.state!.up && !soon(r.state!.at) && 'opacity-60']">
+              <td class="py-2 pl-4">
+                <div class="flex items-center gap-3">
+                  <img v-if="r.portrait" :src="r.portrait" alt="" loading="lazy" draggable="false" class="size-8 shrink-0 rounded-lg border border-card object-cover" />
+                  <span class="font-medium">{{ r.run.short }}</span>
+                </div>
+              </td>
+              <td class="px-3">
+                <span v-if="r.run.tp !== null" class="rounded bg-yellow/15 px-1.5 text-[11px] font-semibold leading-5 text-yellow">TP {{ r.run.tp }}</span>
+              </td>
+              <td class="px-3 text-xs text-darker">{{ r.run.tpName }}</td>
+              <td class="pr-4 text-right">
+                <span v-if="r.state!.up" class="font-medium text-green">{{ t('Alive') }}</span>
+                <span v-else-if="r.state!.at <= now" class="text-yellow">{{ t('Due') }}</span>
+                <span v-else :class="['font-medium tabular-nums', soon(r.state!.at) ? 'text-yellow' : 'text-default']"><Countdown :at="r.state!.at" :now="now" /></span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-if="unseen" class="mt-2 text-xs text-darkest">{{ t('{n} not seen yet: open the map in game to read them.', { n: unseen }) }}</p>
+    </Section>
+  </div>
+</template>
