@@ -17,7 +17,7 @@
  *                         is, sized to what it shows (hidden with nothing within 13 hours)
  *   killfeed  #/killfeed  player kills around you, as they happen: opened from the PvP page
  *   bossruns  #/bossruns  Verteron's field bosses about to spawn, with their Kibelisk: up by itself
- *                         when several spawn close together; click-through
+ *                         when several spawn close together; moved by its header, sized by its corner
  *   meter     #/meter     the DPS meter: open while the game is (and the meter is on), movable by
  *                         its header, sized to its rows
  *
@@ -742,7 +742,6 @@ const bossRunsOverlay = measuredOverlay({
     return { x: Math.round(area.x + area.width * 0.62), y: Math.round(area.y + area.height * 0.3) }
   },
   save: (position) => settings.set('bossRuns', { ...settings.get('bossRuns'), position }),
-  clickThrough: true,
 })
 export const createBossRuns = bossRunsOverlay.create
 export const resizeBossRuns = bossRunsOverlay.resize

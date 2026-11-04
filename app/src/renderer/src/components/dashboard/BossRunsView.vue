@@ -21,6 +21,9 @@ const setRuns = (patch: Partial<typeof runs.value>): void => void store.set('bos
 const pct = (v: number): string => `${Math.round(v * 100)}%`
 const WINDOWS = [5, 10, 15, 20, 30, 45, 60]
 const ROW_CHOICES = [3, 4, 5, 6, 7, 8, 10]
+const ALIVE_CHOICES = [0, 2, 3, 4, 5, 6, 8]
+/** "Neikel, Kutar, Kernon": the small ones, as the hint names them. */
+const SMALL = BOSS_RUNS.filter((r) => r.small).map((r) => r.short).join(', ')
 
 const now = ref(Date.now())
 const ticker = setInterval(() => (now.value = Date.now()), 1000)
@@ -44,12 +47,18 @@ const soon = (at: number): boolean => at - now.value <= runs.value.windowMinutes
     />
 
     <Section title="Over the game">
-      <SettingRow label="Boss Runs list" hint="Stays while any boss of the run is left. A boss killed near you, or listed dead again by the map, is struck out, then fades out. Drag it into place while this dashboard is open.">
+      <SettingRow label="Boss Runs list" hint="Stays while any boss of the run is left. A boss killed near you, or listed dead again by the map, is struck out, then fades out. Move it by its header, size it by its corner; its X hides it until the next run.">
         <Toggle :model-value="runs.enabled" @update:model-value="setRuns({ enabled: $event })" />
       </SettingRow>
       <template v-if="runs.enabled">
         <SettingRow label="Looks ahead" hint="Bosses spawning within this time are listed.">
           <SelectBox size="sm" :model-value="runs.windowMinutes" :options="WINDOWS.map((m) => ({ id: m, label: t('{n} min', { n: m }) }))" @update:model-value="setRuns({ windowMinutes: $event })" />
+        </SettingRow>
+        <SettingRow label="When alive" hint="It also comes up when this many bosses are alive at once.">
+          <SelectBox size="sm" :model-value="runs.aliveMin" :options="ALIVE_CHOICES.map((n) => ({ id: n, label: n ? t('{n} or more', { n }) : t('Never') }))" @update:model-value="setRuns({ aliveMin: $event })" />
+        </SettingRow>
+        <SettingRow v-if="runs.aliveMin" label="Ignore small bosses" :hint="t('{names} come back every 30 minutes: they don\'t count toward the bosses alive.', { names: SMALL })">
+          <Toggle :model-value="runs.ignoreSmall" @update:model-value="setRuns({ ignoreSmall: $event })" />
         </SettingRow>
         <SettingRow label="Bosses" hint="At most this many at once.">
           <SelectBox size="sm" :model-value="runs.rows" :options="ROW_CHOICES.map((n) => ({ id: n, label: String(n) }))" @update:model-value="setRuns({ rows: $event })" />

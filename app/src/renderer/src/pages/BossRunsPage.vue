@@ -1,17 +1,23 @@
 <script setup lang="ts">
 // Boss Runs: Verteron's field bosses about to spawn (shared/bossRuns.ts), soonest first, each with
 // its Kibelisk as chat calls it ("Dartan · TP 33") and its countdown. It comes up by itself when
-// more than 2 spawn close one after another, and stays while any is left: a boss seen killed (in
+// more than 2 spawn close one after another (or as many alive at once as set), and stays while any is left: a boss seen killed (in
 // view, or listed dead again by the map) is struck out a moment, then fades and the list moves up.
-// Clicks go through to the game; while the dashboard is up it shows a sample, and can be dragged
-// into place. Nothing to show measures 0, and main keeps the window hidden.
+// Moved by its header; its corner makes it bigger or smaller, text and all; minimized it is its
+// header with the next boss; its X hides it until the next run. While the dashboard is up with no
+// run on, it shows a sample to place it by. Nothing to show measures 0, and main keeps it hidden.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import CloseButton from '@/components/CloseButton.vue'
+import CollapseButton from '@/components/CollapseButton.vue'
+import ResizeGrip from '@/components/ResizeGrip.vue'
 import { bridge } from '@/lib/bridge.ts'
+import { cornerResize } from '@/lib/cornerResize.ts'
 import { t } from '@/lib/i18n.ts'
 import { panelStyle } from '@/lib/overlayLook.ts'
 import { windowDrag } from '@/lib/windowDrag.ts'
 import { useApp } from '@/stores/app.ts'
-import { BOSS_RUNS, clustered, runRows, type RunRow } from '@shared/bossRuns.ts'
+import { aliveCount, BOSS_RUNS, clustered, runRows, type RunRow } from '@shared/bossRuns.ts'
+import { BOSSRUNS_SCALE, SETTINGS_DEFAULTS, type Settings } from '@shared/settings.ts'
 import { bossPortrait } from '@shared/timers.ts'
 
 const store = useApp()
@@ -24,16 +30,29 @@ const ticker = setInterval(() => (now.value = Date.now()), 1000)
 
 const rows = computed(() => runRows(store.fieldBosses, now.value, cfg.value.windowMinutes * 60_000))
 
-/** Up once a cluster is coming, until nothing is left on the list. */
+/** A run worth showing: a cluster coming, or as many alive as set. */
+const isRun = (list: RunRow[]): boolean => clustered(list) || (cfg.value.aliveMin > 0 && aliveCount(list, cfg.value.ignoreSmall) >= cfg.value.aliveMin)
+/** Up once a run is on, until nothing is left on the list. */
 const active = ref(false)
+/** The bosses on the list when its X was pressed: a run of others brings it back. */
+const dismissed = ref(new Set<number>())
 watch(
-  rows,
-  (list) => {
-    if (clustered(list)) active.value = true
-    else if (!list.length) active.value = false
+  [rows, () => cfg.value.aliveMin, () => cfg.value.ignoreSmall],
+  ([list]) => {
+    if (isRun(list.filter((r) => !dismissed.value.has(r.run.boss)))) {
+      active.value = true
+      dismissed.value = new Set()
+    } else if (!list.length) {
+      active.value = false
+      dismissed.value = new Set()
+    }
   },
   { immediate: true },
 )
+function dismiss(): void {
+  dismissed.value = new Set(rows.value.map((r) => r.run.boss))
+  active.value = false
+}
 
 const SAMPLE = computed<RunRow[]>(() => {
   const at = now.value
@@ -48,6 +67,22 @@ const SAMPLE = computed<RunRow[]>(() => {
 /** Nothing coming while the dashboard is up: a sample to place it by. */
 const preview = computed(() => !active.value && store.panelVisible)
 const list = computed(() => (active.value ? rows.value : preview.value ? SAMPLE.value : []).slice(0, cfg.value.rows))
+/** Minimized: the first not yet killed, shown in the header. */
+const next = computed(() => list.value.find((r) => r.status !== 'killed') ?? null)
+
+const set = (patch: Partial<Settings['bossRuns']>): void => void store.set('bossRuns', { ...cfg.value, ...patch })
+/** Its size while the corner is dragged; the saved one otherwise. */
+const live = ref<number | null>(null)
+const scale = computed(() => live.value ?? cfg.value.scale)
+const BASE_WIDTH = 260
+const onGrip = cornerResize({
+  start: () => ({ width: BASE_WIDTH * scale.value, height: 0 }),
+  move: (size) => (live.value = Math.min(BOSSRUNS_SCALE[1], Math.max(BOSSRUNS_SCALE[0], size.width / BASE_WIDTH))),
+  end: () => {
+    if (live.value !== null) set({ scale: Math.round(live.value * 100) / 100 })
+    live.value = null
+  },
+})
 
 /** 4:09; "up" once it has spawned. */
 function countdown(at: number): string {
@@ -68,7 +103,7 @@ function report(): void {
   sent = key
   void api.invoke('bossruns:resize', { width: r.width, height: r.height })
 }
-watch(() => list.value.length, () => void nextTick(report))
+watch([() => list.value.length, scale, () => cfg.value.collapsed], () => void nextTick(report))
 
 let observer: ResizeObserver | null = null
 onMounted(() => {
@@ -87,16 +122,37 @@ onBeforeUnmount(() => {
     <div ref="root" class="inline-block">
       <section
         v-if="list.length"
-        :class="['text-glow m-1.5 w-[260px] rounded-lg border px-2.5 py-2', store.panelVisible && 'cursor-move']"
-        :style="panelStyle(cfg.opacity, '234 179 8')"
-        @pointerdown="store.panelVisible && drag.onPointerDown($event)"
+        class="text-glow group relative m-1.5 cursor-move rounded-xl border px-3 py-2"
+        :style="{ ...panelStyle(cfg.opacity), zoom: scale, width: `${BASE_WIDTH}px` }"
+        @pointerdown="drag.onPointerDown($event)"
       >
-        <div class="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-yellow">
-          <span class="size-1.5 rounded-full bg-yellow" />
-          {{ t('Boss Runs') }}
-          <span v-if="preview" class="ml-auto font-normal normal-case tracking-normal text-darker">{{ t('drag to move') }}</span>
+        <div class="flex items-center gap-2 text-[13px]">
+          <span class="size-1.5 shrink-0 rounded-full bg-accent" />
+          <span class="shrink-0 font-semibold text-default">{{ t('Boss Runs') }}</span>
+          <template v-if="cfg.collapsed && next">
+            <span class="min-w-0 truncate text-[12px] text-dark">{{ next.run.short }}</span>
+            <span v-if="next.run.tp !== null" class="shrink-0 rounded bg-yellow/15 px-1 text-[11px] font-semibold tabular-nums leading-4 text-yellow">TP {{ next.run.tp }}</span>
+            <span :class="['shrink-0 text-xs font-semibold tabular-nums', next.status === 'up' ? 'text-green' : 'text-default']">{{ countdown(next.at) }}</span>
+          </template>
+          <span v-else-if="preview" class="truncate text-[11px] text-darker">{{ t('drag to move') }}</span>
+          <span class="flex-1" />
+          <CollapseButton :collapsed="cfg.collapsed" class="-my-1" @toggle="set({ collapsed: !cfg.collapsed })" />
+          <button
+            v-if="!preview"
+            type="button"
+            class="-my-1 -mr-1 flex size-5 shrink-0 items-center justify-center rounded text-darker hover:bg-dark hover:text-default"
+            :title="t('Hide until the next run (turn it off in the app)')"
+            @pointerdown.stop
+            @dblclick.stop
+            @click="dismiss"
+          >
+            <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+              <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+            </svg>
+          </button>
+          <CloseButton v-else class="-my-1 -mr-1" @close="set({ enabled: false })" />
         </div>
-        <TransitionGroup tag="div" name="run" class="relative">
+        <TransitionGroup v-if="!cfg.collapsed" tag="div" name="run" class="relative mt-1">
           <div
             v-for="r in list"
             :key="r.run.boss"
@@ -113,6 +169,7 @@ onBeforeUnmount(() => {
             >{{ countdown(r.at) }}</span>
           </div>
         </TransitionGroup>
+        <ResizeGrip :active="live !== null" @grab="onGrip" @reset="set({ scale: SETTINGS_DEFAULTS.bossRuns.scale })" />
       </section>
     </div>
   </div>

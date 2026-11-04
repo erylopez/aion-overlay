@@ -36,6 +36,8 @@ export const MINIMAP_HEIGHT = [120, 900] as const
 /** The kill feed's size, dragged from its corner (never narrower than its title bar). */
 export const KILLFEED_WIDTH = [240, 900] as const
 export const KILLFEED_HEIGHT = [60, 900] as const
+/** Boss Runs' size, as a scale of its 260 px: its corner drags it bigger, text and all. */
+export const BOSSRUNS_SCALE = [0.75, 2.5] as const
 
 export interface Settings {
   /** Where the floating icon sits, in screen DIPs; null = bottom right of the primary display. */
@@ -123,9 +125,10 @@ export interface Settings {
   /**
    * Boss Runs (shared/bossRuns.ts): Verteron's field bosses about to spawn, with their Kibelisk,
    * up by itself when more than 2 spawn close together. How far ahead it looks (minutes), how
-   * many it lists.
+   * many it lists, minimized to its header, its size (a scale of its 260 px), how many alive at
+   * once bring it up too (0: never), and whether the small 30-minute bosses count for that.
    */
-  bossRuns: { enabled: boolean; position: Point | null; opacity: number; windowMinutes: number; rows: number }
+  bossRuns: { enabled: boolean; position: Point | null; opacity: number; windowMinutes: number; rows: number; collapsed: boolean; scale: number; aliveMin: number; ignoreSmall: boolean }
 
   /** The kill feed over the game: open (from the PvP page), and where (null = top right). */
   /**
@@ -301,7 +304,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   merchantWindow: null,
   detailsWindow: null,
   timerBar: { enabled: true, position: null, opacity: 0.92 },
-  bossRuns: { enabled: true, position: null, opacity: 0.85, windowMinutes: 15, rows: 5 },
+  bossRuns: { enabled: true, position: null, opacity: 0.85, windowMinutes: 15, rows: 5, collapsed: false, scale: 1, aliveMin: 0, ignoreSmall: true },
   killFeed: { open: false, position: null, opacity: 0.9, collapsed: false, target: true, width: null, height: null },
   enemies: { enabled: true, position: null, opacity: 0.75, collapsed: false, mapPins: true, sound: true, pvpOnly: true, soundId: 'enemy-spotted', volume: 0.7, customName: null },
   skills: { enabled: true, position: null, rows: 6, opacity: 0.92 },
@@ -466,6 +469,10 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
         opacity: num(v.opacity, 0, 1, d.bossRuns.opacity),
         windowMinutes: Math.round(num(v.windowMinutes, 5, 60, d.bossRuns.windowMinutes)),
         rows: Math.round(num(v.rows, 1, 10, d.bossRuns.rows)),
+        collapsed: bool(v.collapsed, false),
+        scale: num(v.scale, BOSSRUNS_SCALE[0], BOSSRUNS_SCALE[1], d.bossRuns.scale),
+        aliveMin: Math.round(num(v.aliveMin, 0, 10, d.bossRuns.aliveMin)),
+        ignoreSmall: bool(v.ignoreSmall, d.bossRuns.ignoreSmall),
       } as Settings[K]
     }
     case 'enemies': {
