@@ -1,8 +1,9 @@
 <script setup lang="ts">
-// One renderer, seventeen windows: the hash says which one this is. Read once, from location rather
+// One renderer, eighteen windows: the hash says which one this is. Read once, from location rather
 // than a router, so a window never flashes another window's page (a marnis-app lesson).
 import { onMounted } from 'vue'
 import BossRunsPage from './pages/BossRunsPage.vue'
+import EventToastPage from './pages/EventToastPage.vue'
 import BubblePage from './pages/BubblePage.vue'
 import BuffsPage from './pages/BuffsPage.vue'
 import CcPage from './pages/CcPage.vue'
@@ -41,6 +42,7 @@ onMounted(() => void store.init())
   <CcPage v-else-if="page === 'cc'" />
   <EnemiesPage v-else-if="page === 'enemies'" />
   <BossRunsPage v-else-if="page === 'bossruns'" />
+  <EventToastPage v-else-if="page === 'eventtoast'" />
   <TrainingPage v-else-if="page === 'training'" />
   <PacketsPage v-else-if="page === 'packets'" />
   <GameMapPage v-else-if="page === 'gamemap'" />

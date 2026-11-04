@@ -254,7 +254,8 @@ export interface Settings {
 
   /**
    * Sync the field bosses to the Lokthar site's timers (main/lokthar.ts): off until turned on with
-   * a token. Besides the update check (Settings → Updates, by hand), the only requests the app makes: to `url` alone.
+   * a token. Besides the update check (Settings → Updates, by hand), NCSoft's character pages and
+   * the guild events below, the only requests the app makes: to `url` alone.
    */
   lokthar: {
     sync: boolean
@@ -263,6 +264,13 @@ export interface Settings {
     /** From the site: bin/rails 'overlay:token[you]'. */
     token: string
   }
+
+  /**
+   * Guild events from the Lokthar site (main/guildEvents.ts, at lokthar.url): the events that ask
+   * who comes, answered here; on, it sends the site your characters' names and servers to know you
+   * by. `popup`: an event to answer pops up over the game, bottom right.
+   */
+  guildEvents: { enabled: boolean; popup: boolean }
 
   tracker: {
     /** The collection file; empty = <userData>/collection.json. */
@@ -330,6 +338,7 @@ export const SETTINGS_DEFAULTS: Settings = {
   sleepWithoutGame: true,
   hideWhenGameAway: true,
   lokthar: { sync: false, url: 'https://lokthar.com', token: '' },
+  guildEvents: { enabled: true, popup: true },
   tracker: { dataFile: '' },
 }
 
@@ -565,6 +574,10 @@ export function normalise<K extends SettingKey>(key: K, value: unknown): Setting
       return (value === 'asmodians' ? 'asmodians' : 'elyos') as Settings[K]
     case 'playerLevel':
       return (typeof value === 'number' && Number.isFinite(value) ? Math.round(num(value, 1, 99, 1)) : null) as Settings[K]
+    case 'guildEvents': {
+      const v = (value ?? {}) as Partial<Settings['guildEvents']>
+      return { enabled: bool(v.enabled, d.guildEvents.enabled), popup: bool(v.popup, d.guildEvents.popup) } as Settings[K]
+    }
     case 'lokthar': {
       const v = (value ?? {}) as Partial<Settings['lokthar']>
       return {

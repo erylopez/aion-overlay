@@ -18,6 +18,8 @@
  *   killfeed  #/killfeed  player kills around you, as they happen: opened from the PvP page
  *   bossruns  #/bossruns  Verteron's field bosses about to spawn, with their Kibelisk: up by itself
  *                         when several spawn close together; moved by its header, sized by its corner
+ *   eventtoast #/eventtoast a guild event to answer (going, maybe, not going): popped up in the
+ *                         bottom right corner of the screen the game is on, above the taskbar
  *   meter     #/meter     the DPS meter: open while the game is (and the meter is on), movable by
  *                         its header, sized to its rows
  *
@@ -561,10 +563,16 @@ function measuredOverlay(o: {
   save: (p: Point) => void
   /** Clicks go through to the game, except while the dashboard is up (to move it). */
   clickThrough?: boolean
+  /** Kept with its bottom right corner here, whatever its size (not moved by hand). */
+  corner?: () => Point
 }) {
   let win: BrowserWindow | null = null
   let size = { width: 0, height: 0 }
-  const position = (): Point => o.saved() ?? o.fallback()
+  const position = (): Point => {
+    if (!o.corner) return o.saved() ?? o.fallback()
+    const c = o.corner()
+    return { x: c.x - size.width, y: c.y - size.height }
+  }
   const refresh = (): void => {
     if (!alive(win)) return
     if (size.width > 0 && size.height > 0) {
@@ -748,7 +756,26 @@ export const resizeBossRuns = bossRunsOverlay.resize
 export const moveBossRuns = bossRunsOverlay.move
 export const bossRunsDragEnded = bossRunsOverlay.dragEnded
 
-const MEASURED = [skillsOverlay, miniMapOverlay, buffsOverlay, ccOverlay, enemiesOverlay, trainingOverlay, packetsOverlay, bossRunsOverlay]
+/**
+ * A guild event to answer: in the bottom right corner of the screen the game is on (the one the
+ * bubble sits on, the primary without it), above the taskbar.
+ */
+const eventToastEnabled = (): boolean => settings.get('guildEvents').enabled && settings.get('guildEvents').popup
+const eventToastOverlay = measuredOverlay({
+  route: 'eventtoast',
+  enabled: () => eventToastEnabled(),
+  saved: () => null,
+  fallback: () => ({ x: 0, y: 0 }),
+  save: () => {},
+  corner: () => {
+    const area = (alive(bubble) ? screen.getDisplayMatching(bubble.getBounds()) : screen.getPrimaryDisplay()).workArea
+    return { x: area.x + area.width - EDGE, y: area.y + area.height - EDGE }
+  },
+})
+export const createEventToast = eventToastOverlay.create
+export const resizeEventToast = eventToastOverlay.resize
+
+const MEASURED = [skillsOverlay, miniMapOverlay, buffsOverlay, ccOverlay, enemiesOverlay, trainingOverlay, packetsOverlay, bossRunsOverlay, eventToastOverlay]
 /** The measured overlays that are open. */
 const measuredWins = (): BrowserWindow[] => MEASURED.map((m) => m.win()).filter((w): w is BrowserWindow => w !== null)
 
@@ -1029,6 +1056,8 @@ export function applyWindowSettings(): void {
   else if (alive(bubble)) createEnemies()
   if (!settings.get('bossRuns').enabled) bossRunsOverlay.close()
   else if (alive(bubble)) createBossRuns()
+  if (!eventToastEnabled()) eventToastOverlay.close()
+  else if (alive(bubble)) createEventToast()
   if (!settings.get('dummy').overlay) trainingOverlay.close()
   else if (alive(bubble)) createTraining()
   // Turned on: with the other overlays, while they are up (the bubble is, awake).
@@ -1090,7 +1119,7 @@ export function rebuildWindow(win: BrowserWindow): string | null {
     showMerchant()
     return 'merchant'
   }
-  for (const [m, route] of [[skillsOverlay, 'skills'], [miniMapOverlay, 'minimap'], [buffsOverlay, 'buffs'], [ccOverlay, 'cc'], [enemiesOverlay, 'enemies'], [trainingOverlay, 'training'], [packetsOverlay, 'packets'], [bossRunsOverlay, 'bossruns']] as const) {
+  for (const [m, route] of [[skillsOverlay, 'skills'], [miniMapOverlay, 'minimap'], [buffsOverlay, 'buffs'], [ccOverlay, 'cc'], [enemiesOverlay, 'enemies'], [trainingOverlay, 'training'], [packetsOverlay, 'packets'], [bossRunsOverlay, 'bossruns'], [eventToastOverlay, 'eventtoast']] as const) {
     if (win !== m.win()) continue
     m.close()
     m.create()

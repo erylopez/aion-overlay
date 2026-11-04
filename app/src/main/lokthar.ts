@@ -30,8 +30,8 @@ let pending: { server: number; world: number | null; list: MapBoss[] } | null = 
 let retry: ReturnType<typeof setTimeout> | null = null
 let busy = false
 
-/** The site's endpoint, or why there is none. https only, but for a development server at localhost. */
-function endpoint(): URL | string {
+/** The site (Settings → Lokthar), or why it can't be used. https only, but for a development server at localhost. */
+export function siteBase(): URL | string {
   const { url } = settings.get('lokthar')
   let base: URL
   try {
@@ -41,7 +41,13 @@ function endpoint(): URL | string {
   }
   const local = base.hostname === 'localhost' || base.hostname === '127.0.0.1'
   if (base.protocol !== 'https:' && !(base.protocol === 'http:' && local)) return `${base.origin} is not https`
-  return new URL(PATH, base.origin)
+  return new URL(base.origin)
+}
+
+/** The site's endpoint, or why there is none. */
+function endpoint(): URL | string {
+  const base = siteBase()
+  return typeof base === 'string' ? base : new URL(PATH, base)
 }
 
 async function post(body: object): Promise<{ status: number; json: Record<string, unknown> }> {

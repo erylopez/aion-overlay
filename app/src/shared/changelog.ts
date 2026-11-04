@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: '0.3.11',
     items: [
+      'New Guild Events page: the guild\'s events on lokthar.com that ask who is coming (the Rift at 23, a raid night...), answered Sign up, Maybe or Decline, here or from a popup over the game in the bottom right corner of the screen, as soon as an event is made. Open one to see who comes, going first, then maybe, with each player\'s class, gear score and combat power. The site knows you by your characters: no sign-in.',
       'The Field Bosses page has an Abyss tab: Argo, Watcher Kaira, the three Guardian Lord Nahmas and the Executors, with their respawns and alerts, updated each time you enter the Abyss.',
       'The timer bar names a timer the moment you hover its icon, with the time it starts.',
       'Watcher Kaira has its time on the Abyss tab (the game sends none: it follows its schedule, every 3 hours), and the Kaira alert now matches the game\'s countdown. Guardian Lord Nahma\'s alert takes the game\'s own time once you enter the Abyss, and is at 21:10, as the game has it. The South America region is confirmed (UTC-3).',

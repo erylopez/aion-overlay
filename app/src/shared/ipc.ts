@@ -11,6 +11,7 @@ import type { UpdateState } from './update.ts'
 import type { KinaSession } from './kina.ts'
 import type { DetailsSource, DetailsView, FightSummary, MeterData, PacketLog, PersonalView, Recordings } from './meter.ts'
 import type { SyncResult } from './lokthar.ts'
+import type { GuildEventDetail, GuildEventsState, Rsvp } from './guildEvents.ts'
 import type { CustomSoundResult, SoundSlot } from './sounds.ts'
 import type { Point, Rect, SettingKey, Settings } from './settings.ts'
 import type { FieldBosses, TimerAlert, TimerId } from './timers.ts'
@@ -152,6 +153,13 @@ export interface InvokeChannels {
   'bossruns:moveTo': { args: [to: Point]; result: void }
   'bossruns:dragEnd': { args: []; result: void }
   'bossruns:resize': { args: [size: { width: number; height: number }]; result: void }
+  /** Guild events (main/guildEvents.ts): the list, asked again, answered (null, or why not), one with who comes, closed unanswered. */
+  'guildEvents:get': { args: []; result: GuildEventsState }
+  'guildEvents:refresh': { args: []; result: void }
+  'guildEvents:respond': { args: [id: number, status: Rsvp]; result: string | null }
+  'guildEvents:detail': { args: [id: number]; result: GuildEventDetail | null }
+  'guildEvents:dismiss': { args: [id: number]; result: void }
+  'eventtoast:resize': { args: [size: { width: number; height: number }]; result: void }
   'enemies:moveTo': { args: [to: Point]; result: void }
   'enemies:dragEnd': { args: []; result: void }
   'enemies:resize': { args: [size: { width: number; height: number }]; result: void }
@@ -226,6 +234,9 @@ export interface EventChannels {
   'buffs:list': Buff[]
   /** An update check or download moved on. */
   'update:state': UpdateState
+  'guildEvents:state': GuildEventsState
+  /** Someone answered this event: its detail, if open, is asked again. */
+  'guildEvents:changed': number
   /** The training dummy runs changed, or the one going on moved. */
   'dummy:state': DummyState
   /** A recording started or stopped. */
@@ -261,10 +272,10 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'meter:get', 'meter:reset', 'meter:moveTo', 'meter:dragEnd', 'meter:resize',
   'minimap:moveTo', 'minimap:dragEnd', 'minimap:resize',
   'skills:get', 'skills:moveTo', 'skills:dragEnd', 'skills:resize',
-  'buffs:get', 'buffs:moveTo', 'buffs:dragEnd', 'buffs:resize', 'cc:moveTo', 'cc:dragEnd', 'cc:resize', 'enemies:moveTo', 'enemies:dragEnd', 'enemies:resize', 'bossruns:moveTo', 'bossruns:dragEnd', 'bossruns:resize', 'training:moveTo', 'training:dragEnd', 'training:resize', 'overlays:toggle', 'overlays:hidden', 'recordings:get', 'recordings:set', 'recordings:open', 'packets:get', 'packets:set', 'packets:mark', 'packets:show', 'packets:resize', 'sounds:pickCustom', 'sounds:custom', 'update:get', 'update:peek', 'update:check', 'update:download', 'update:install', 'dummy:get', 'dummy:start', 'dummy:stop', 'dummy:newGroup', 'dummy:delete',
+  'buffs:get', 'buffs:moveTo', 'buffs:dragEnd', 'buffs:resize', 'cc:moveTo', 'cc:dragEnd', 'cc:resize', 'enemies:moveTo', 'enemies:dragEnd', 'enemies:resize', 'bossruns:moveTo', 'bossruns:dragEnd', 'bossruns:resize', 'guildEvents:get', 'guildEvents:refresh', 'guildEvents:respond', 'guildEvents:detail', 'guildEvents:dismiss', 'eventtoast:resize', 'training:moveTo', 'training:dragEnd', 'training:resize', 'overlays:toggle', 'overlays:hidden', 'recordings:get', 'recordings:set', 'recordings:open', 'packets:get', 'packets:set', 'packets:mark', 'packets:show', 'packets:resize', 'sounds:pickCustom', 'sounds:custom', 'update:get', 'update:peek', 'update:check', 'update:download', 'update:install', 'dummy:get', 'dummy:start', 'dummy:stop', 'dummy:newGroup', 'dummy:delete',
   'details:open', 'details:get', 'details:close', 'details:moveTo', 'details:dragEnd', 'history:list', 'history:delete',
 ]
 
 export const EVENT_CHANNELS: readonly EventChannel[] = [
-  'settings:changed', 'tracker:status', 'tracker:pets', 'tracker:pet', 'tracker:soul', 'tracker:nearby', 'tracker:cubes', 'tracker:enemies', 'tracker:target', 'tracker:combat', 'tracker:shop', 'tracker:kina', 'tracker:fieldBosses', 'characters:changed', 'gamemap:state', 'tracker:pvp', 'tracker:pvpKill', 'panel:showPet', 'panel:showTimers', 'timers:alert', 'timers:alerting', 'hud:editing', 'panel:visible', 'panel:maximized', 'meter:dps', 'details:source', 'history:changed', 'buffs:list', 'overlays:hidden', 'recordings:changed', 'packets:state', 'dummy:state', 'update:state',
+  'settings:changed', 'tracker:status', 'tracker:pets', 'tracker:pet', 'tracker:soul', 'tracker:nearby', 'tracker:cubes', 'tracker:enemies', 'tracker:target', 'tracker:combat', 'tracker:shop', 'tracker:kina', 'tracker:fieldBosses', 'characters:changed', 'gamemap:state', 'tracker:pvp', 'tracker:pvpKill', 'panel:showPet', 'panel:showTimers', 'timers:alert', 'timers:alerting', 'hud:editing', 'panel:visible', 'panel:maximized', 'meter:dps', 'details:source', 'history:changed', 'buffs:list', 'overlays:hidden', 'recordings:changed', 'packets:state', 'dummy:state', 'update:state', 'guildEvents:state', 'guildEvents:changed',
 ]

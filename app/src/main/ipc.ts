@@ -8,6 +8,7 @@ import { characterStore } from './characters.ts'
 import { gameMap, regionDisplay } from './gameMap.ts'
 import { mapDetail } from './gameMapDetail.ts'
 import { lokthar } from './lokthar.ts'
+import { guildEvents } from './guildEvents.ts'
 import { packets } from './packets.ts'
 import { settings } from './settings.ts'
 import { sounds } from './sounds.ts'
@@ -15,6 +16,7 @@ import { timers } from './timers.ts'
 import { logPath, tracker } from './tracker.ts'
 import {
   bossRunsDragEnded,
+  resizeEventToast,
   bubbleDragEnded,
   buffsDragEnded,
   moveBossRuns,
@@ -256,6 +258,18 @@ export function registerIpc(): void {
     if (isPoint(to)) moveBossRuns(to)
   })
   handle('bossruns:dragEnd', () => bossRunsDragEnded())
+  handle('guildEvents:get', () => guildEvents.get())
+  handle('guildEvents:refresh', () => guildEvents.refresh())
+  handle('guildEvents:respond', (id, status) =>
+    Number.isInteger(id) && ['going', 'maybe', 'declined'].includes(status) ? guildEvents.respond(id, status) : Promise.resolve('not an answer'),
+  )
+  handle('guildEvents:detail', (id) => (Number.isInteger(id) ? guildEvents.detail(id) : Promise.resolve(null)))
+  handle('guildEvents:dismiss', (id) => {
+    if (Number.isInteger(id)) guildEvents.dismiss(id)
+  })
+  handle('eventtoast:resize', (size) => {
+    if (isPoint({ x: size?.width, y: size?.height })) resizeEventToast(size)
+  })
   handle('bossruns:resize', (size) => {
     if (isPoint({ x: size?.width, y: size?.height })) resizeBossRuns(size)
   })

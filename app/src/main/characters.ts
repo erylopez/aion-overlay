@@ -27,6 +27,8 @@ let fetching = false
 /** Asked for while a fetch was going: another round after it. */
 let again = false
 
+const listeners = new Set<() => void>()
+
 const file = (): string => join(app.getPath('userData'), 'characters.json')
 
 function load(): void {
@@ -44,6 +46,7 @@ function changed(): void {
     log(`characters: not saved: ${String(err)}`)
   }
   broadcast('characters:changed', characters)
+  for (const fn of listeners) fn()
 }
 
 function entry(server: number, name: string): TrackedCharacter {
@@ -148,6 +151,11 @@ function corridorSeen(c: TrackedCharacter, id: string, ms: number, at: number): 
 
 export const characterStore = {
   all: (): Characters => characters,
+  /** Told after every change (guild events: a new character may be the one the site knows). */
+  onChange(fn: () => void): () => void {
+    listeners.add(fn)
+    return () => listeners.delete(fn)
+  },
   /** Ask NCSoft again now (the refresh button). */
   async refresh(id: string): Promise<void> {
     const c = characters[id]

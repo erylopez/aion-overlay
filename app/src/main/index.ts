@@ -13,6 +13,7 @@ import { registerIpc } from './ipc.ts'
 import { settings } from './settings.ts'
 import { startIdleWatch } from './idle.ts'
 import { startLokthar } from './lokthar.ts'
+import { startGuildEvents } from './guildEvents.ts'
 import { join } from 'node:path'
 import { moveDataFolder, OLD_NAMES } from './migrate.ts'
 import { startHotkeys, stopHotkeys } from './hotkeys.ts'
@@ -51,6 +52,7 @@ if (!app.requestSingleInstanceLock()) {
     startCharacters()
     startGameMap()
     startLokthar()
+    startGuildEvents()
     startOnTopWatch()
     registerIpc()
     startNpcapWatch()
