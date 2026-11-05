@@ -11,6 +11,12 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.3.12',
+    items: [
+      'Eternal Gartua and High Commander Lagta respawn 11 hours after they die (the 2026-11-04 patch), on both sides, and Argo, the Spirit King spawns at 10:30 and 22:30 every day: lokthar.com has the new times, and the Field Bosses page takes them from the game as before.',
+    ],
+  },
+  {
     version: '0.3.11',
     items: [
       'New Guild Events page: the guild\'s events on lokthar.com that ask who is coming (the Rift at 23, a raid night...), answered Sign up, Maybe or Decline, here or from a popup over the game in the bottom right corner of the screen, as soon as an event is made. Open one to see who comes, going first, then maybe, with each player\'s class, gear score and combat power. The site knows you by your characters: no sign-in.',

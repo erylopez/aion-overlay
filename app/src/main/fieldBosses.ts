@@ -4,9 +4,10 @@
  * The tracker passes on the field boss list whenever it changes while the map is open, and the
  * Abyss's as you enter it. It goes nowhere else, unless the Lokthar sync is turned on in Settings
  * (main/lokthar.ts listens here). The Abyss's bosses go too: the site follows the ones it has a
- * reportable timer for (Argo, 12 h after a kill) and skips the rest.
+ * reportable timer for and skips the rest (Argo too, on a fixed 10:30 and 22:30 since the
+ * 2026-11-04 patch).
  *
- * Kept across restarts in `<userData>/fieldbosses.json`, by game server (a respawn 12 h away
+ * Kept across restarts in `<userData>/fieldbosses.json`, by game server (a respawn 11 h away
  * outlives the app, and each server has its own bosses).
  */
 import { app } from 'electron'

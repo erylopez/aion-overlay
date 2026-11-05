@@ -196,7 +196,11 @@ export function bossState(boss: number, bosses: FieldBosses, now: number, region
   const id = ON_SCHEDULE[boss]
   const s = id ? TIMERS.find((t) => t.id === id)?.schedule : undefined
   if (!s || s.kind === 'boss') return b
-  if (b && nextStart(s, b.seen, region) > now) return b
+  if (b) {
+    const next = nextStart(s, b.seen, region)
+    // Killed in view: the list never gives it a time, so its respawn is the schedule's next start.
+    if (next > now) return b.up || b.at > 0 ? b : { ...b, at: next, source: 'schedule' }
+  }
   return { up: false, at: nextStart(s, now, region), seen: now, source: 'schedule' }
 }
 
@@ -279,7 +283,7 @@ export const TIMERS: TimerDef[] = [
   {
     id: 'gartua',
     name: 'Eternal Gartua',
-    detail: 'Verteron field boss on Eternal Isle, 12 h after it dies: open the map to update',
+    detail: 'Verteron field boss on Eternal Isle, 11 h after it dies: open the map to update',
     schedule: { kind: 'boss', boss: 101021 },
     lead: 10,
     confirmed: true,
