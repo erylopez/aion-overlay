@@ -14,6 +14,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: '0.3.12',
     items: [
       'Eternal Gartua and High Commander Lagta respawn 11 hours after they die (the 2026-11-04 patch), on both sides, and Argo, the Spirit King spawns at 10:30 and 22:30 every day: lokthar.com has the new times, and the Field Bosses page takes them from the game as before.',
+      'Watcher Kaira no longer stays dead on the Abyss tab after you see it killed: it counts down to its next scheduled spawn.',
     ],
   },
   {
