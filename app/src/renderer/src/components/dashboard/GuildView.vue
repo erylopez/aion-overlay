@@ -50,6 +50,10 @@ const view = ref<'members' | 'characters'>((() => { try { return localStorage.ge
 const sort = ref<'power' | 'gear' | 'energy' | 'name'>('power')
 const query = ref('')
 const picked = ref(new Set<string>())
+/** Gear score thresholds that open content (Ludra 2800, its hard mode 3000): one picked at a time. */
+const GS_STEPS = [700, 1400, 1600, 1900, 2100, 2200, 2600, 2700, 2800, 3000]
+const minGear = ref(0)
+const toggleGear = (n: number): void => { minGear.value = minGear.value === n ? 0 : n }
 const setView = (v: 'members' | 'characters'): void => {
   view.value = v
   try { localStorage.setItem('guild.view', v) } catch { /* private window */ }
@@ -72,6 +76,7 @@ const classOf = (c: GuildCharacter): string => (ALIAS[c.className?.toLowerCase()
 const matches = (c: GuildCharacter, owner: string): boolean => {
   const q = query.value.trim().toLowerCase()
   if (picked.value.size && !picked.value.has(classOf(c))) return false
+  if (minGear.value && (c.gearScore ?? 0) < minGear.value) return false
   return !q || owner.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
 }
 
@@ -180,6 +185,16 @@ const busy = computed(() => guild.value.state === 'loading' && !guild.value.memb
               <svg viewBox="0 0 16 16" class="size-4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11" /></svg>
             </button>
           </div>
+        </div>
+        <div class="flex basis-full flex-wrap items-center gap-1">
+          <img :src="ICONS.gear" alt="" draggable="false" class="mr-1 h-4 w-[11px]" :title="t('Gear score')" />
+          <button
+            v-for="n in GS_STEPS"
+            :key="n"
+            type="button"
+            :class="['rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums transition', minGear === n ? 'border-accent bg-accent/15 text-default' : 'border-transparent bg-dark text-darker hover:text-default']"
+            @click="toggleGear(n)"
+          >{{ n }}+</button>
         </div>
       </div>
 
