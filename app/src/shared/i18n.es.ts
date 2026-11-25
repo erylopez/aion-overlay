@@ -1242,6 +1242,8 @@ export const ES: Record<string, string> = {
   'Energy': 'Energía',
   'GS': 'GS',
   'Guild': 'Guild',
+  'Enemies nearby and its alert sound work again in the Abyss: players of your own faction from another server, who can now fight you there, count as enemies.': 'Enemigos cerca y su sonido de alerta vuelven a funcionar en el Abismo: los jugadores de tu propia facción de otro servidor, que ahora pueden pelear contigo allí, cuentan como enemigos.',
+  'The Guild page filters characters by gear score (700+ up to 3000+, the minimums to enter dungeons such as Ludra).': 'La página Guild filtra personajes por gear score (de 700+ a 3000+, los mínimos para entrar a mazmorras como Ludra).',
   'Main': 'Principal',
   'Member': 'Miembro',
   'None of your characters is on a roster': 'Ninguno de tus personajes está en un roster',

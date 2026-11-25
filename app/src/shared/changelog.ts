@@ -11,6 +11,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.3.15',
+    items: [
+      'Enemies nearby and its alert sound work again in the Abyss: players of your own faction from another server, who can now fight you there, count as enemies.',
+      'The Guild page filters characters by gear score (700+ up to 3000+, the minimums to enter dungeons such as Ludra).',
+    ],
+  },
+  {
     version: '0.3.14',
     items: [
       'New Guild page: every member of your Lokthar roster with all their characters, their gear score, combat power and Odyle energy, by member or as one list, filtered by class and name.',
