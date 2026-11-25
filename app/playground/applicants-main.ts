@@ -17,7 +17,14 @@ void useApp(pinia).init().then(() => {
   for (let i = 0; i < Number(params.get('n') ?? 0); i++) sim.apply()
 })
 
+// For the recorder (record-applicants.mjs): ?bare=1 shows the widget alone over the game, no buttons.
+;(window as unknown as { promo: unknown }).promo = { sim }
 const box = document.getElementById('controls')!
+if (params.has('bare')) {
+  box.remove()
+  const stage = document.getElementById('playground')!.parentElement!
+  stage.style.cssText += ';justify-content: flex-start; padding: 0; align-items: flex-start'
+}
 const button = (label: string, run: () => void): void => {
   const b = document.createElement('button')
   b.textContent = label
